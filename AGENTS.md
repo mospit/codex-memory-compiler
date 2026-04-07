@@ -19,6 +19,9 @@ Compile conversation history into a markdown knowledge base while preserving the
    - `memory-query`
    - `memory-lint`
 3. Keep changes small and commit after each logical phase.
+4. For confidence before/after changes, run:
+   - `uv run python -m unittest tests/test_pipeline.py`
+   - `uv run python scripts/lint.py --structural-only`
 
 ### Works-everywhere fallback (no hooks required)
 ```bash
@@ -60,8 +63,13 @@ uv run python scripts/lint.py --structural-only
 ## Optional Integrations
 Claude-specific hook examples are isolated under:
 - `integrations/claude-hooks/`
+- `integrations/codex-hooks/` (Codex-oriented optional session scaffolding)
 
 These are **optional compatibility scaffolding**, not core requirements.
+
+## Sample/demo path
+
+Run `uv run python scripts/run_sample.py` to execute ingest -> compile -> query -> lint against bundled fixture context in an isolated temporary workspace.
 
 ## Editing Guidelines
 - Preserve markdown knowledge model and directory contracts.

@@ -13,5 +13,5 @@ Use this skill when the user asks questions about prior session knowledge.
 3. Report the consulted `[[wikilinks]]` and confidence limits.
 
 ## Notes
-- Retrieval is deterministic and index-guided (no embeddings).
+- Retrieval is deterministic and index-guided (no embeddings), with token scoring from article text + index summary hints.
 - If results are weak, suggest compiling newer daily logs first.

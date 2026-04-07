@@ -13,6 +13,7 @@ Use this skill when the user asks to save session memory or transcript context.
    - `uv run python scripts/ingest.py --file <path> --session-id <id>`
 3. Verify the latest `daily/YYYY-MM-DD.md` has a new `### Session (HH:MM)` block.
 4. If requested, run `uv run python scripts/compile.py` after ingest.
+5. Optional: in compatible environments, `integrations/codex-hooks/session-start.py` and `session-stop.py` can scaffold the same ingest flow.
 
 ## Guardrails
 - Never rewrite prior session sections in daily logs.

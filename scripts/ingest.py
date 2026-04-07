@@ -13,8 +13,8 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-SCRIPTS_DIR = ROOT / "scripts"
+from config import CODE_SCRIPTS_DIR, SCRIPTS_DIR
+
 TMP_DIR = SCRIPTS_DIR / ".tmp"
 
 
@@ -52,7 +52,7 @@ def main() -> None:
 
     cmd = [
         sys.executable,
-        str(SCRIPTS_DIR / "flush.py"),
+        str(CODE_SCRIPTS_DIR / "flush.py"),
         str(context_path),
         args.session_id,
     ]
