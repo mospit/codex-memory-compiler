@@ -15,6 +15,7 @@ Use this skill when asked to compile memories into the markdown KB.
    - `knowledge/index.md`
    - `knowledge/log.md`
 4. Run lint after compile: `uv run python scripts/lint.py --structural-only`.
+5. For confidence on baseline behavior: `uv run python -m unittest tests/test_pipeline.py`.
 
 ## Quality checks
 - Articles must retain YAML frontmatter.

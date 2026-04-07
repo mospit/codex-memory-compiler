@@ -13,7 +13,7 @@ from collections import Counter
 from pathlib import Path
 
 from config import KNOWLEDGE_DIR, QA_DIR, now_iso
-from utils import extract_wikilinks, list_wiki_articles, load_state, save_state, slugify
+from utils import extract_wikilinks, list_wiki_articles, load_state, read_wiki_index, save_state, slugify
 
 STOPWORDS = {
     "the", "a", "an", "to", "for", "of", "and", "or", "in", "on", "is", "are",
@@ -26,23 +26,53 @@ def tokenize(text: str) -> list[str]:
     return [t for t in tokens if t not in STOPWORDS and len(t) > 2]
 
 
-def score_article(question_tokens: list[str], content: str, path: Path) -> int:
+def extract_index_rows() -> dict[str, str]:
+    """Map wiki link target -> index summary."""
+    summaries: dict[str, str] = {}
+    for line in read_wiki_index().splitlines():
+        if not line.startswith("| [["):
+            continue
+        parts = [part.strip() for part in line.split("|")]
+        if len(parts) < 4:
+            continue
+        link_col = parts[1]
+        summary_col = parts[2]
+        match = re.match(r"^\[\[([^\]]+)\]\]$", link_col)
+        if match and summary_col:
+            summaries[match.group(1)] = summary_col
+    return summaries
+
+
+def score_article(question_tokens: list[str], content: str, path: Path, index_summary: str = "") -> int:
     words = tokenize(content)
     counts = Counter(words)
     score = sum(counts[t] for t in question_tokens)
 
     path_tokens = set(tokenize(path.stem.replace("-", " ")))
     score += sum(3 for t in question_tokens if t in path_tokens)
+
+    if index_summary:
+        index_words = Counter(tokenize(index_summary))
+        score += sum(index_words[t] * 2 for t in question_tokens)
+
+    inbound = len(extract_wikilinks(content))
+    score += min(3, inbound // 4)
     return score
 
 
 def top_articles(question: str, limit: int = 6) -> list[Path]:
     q_tokens = tokenize(question)
     scored: list[tuple[int, Path]] = []
+    index_summaries = extract_index_rows()
 
     for article in list_wiki_articles():
         content = article.read_text(encoding="utf-8")
-        score = score_article(q_tokens, content, article)
+        rel = article.relative_to(KNOWLEDGE_DIR).as_posix().replace(".md", "")
+        score = score_article(q_tokens, content, article, index_summaries.get(rel, ""))
+
+        if question.lower() in content.lower():
+            score += 6
+
         if score > 0:
             scored.append((score, article))
 

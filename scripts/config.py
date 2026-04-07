@@ -1,10 +1,12 @@
 """Path constants and configuration for the personal knowledge base."""
 
-from pathlib import Path
+import os
 from datetime import datetime, timezone
+from pathlib import Path
 
 # ── Paths ──────────────────────────────────────────────────────────────
-ROOT_DIR = Path(__file__).resolve().parent.parent
+CODE_ROOT_DIR = Path(__file__).resolve().parent.parent
+ROOT_DIR = Path(os.environ.get("MEMORY_COMPILER_ROOT", str(CODE_ROOT_DIR))).resolve()
 DAILY_DIR = ROOT_DIR / "daily"
 KNOWLEDGE_DIR = ROOT_DIR / "knowledge"
 CONCEPTS_DIR = KNOWLEDGE_DIR / "concepts"
@@ -12,6 +14,7 @@ CONNECTIONS_DIR = KNOWLEDGE_DIR / "connections"
 QA_DIR = KNOWLEDGE_DIR / "qa"
 REPORTS_DIR = ROOT_DIR / "reports"
 SCRIPTS_DIR = ROOT_DIR / "scripts"
+CODE_SCRIPTS_DIR = CODE_ROOT_DIR / "scripts"
 HOOKS_DIR = ROOT_DIR / "hooks"
 AGENTS_FILE = ROOT_DIR / "AGENTS.md"
 

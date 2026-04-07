@@ -106,6 +106,11 @@ def build_candidate(session_title: str, session_body: str, all_slugs: list[str])
     slug = slugify(base_title)
     if not slug:
         slug = "session-concept"
+    original_slug = slug
+    suffix = 2
+    while slug in all_slugs:
+        slug = f"{original_slug}-{suffix}"
+        suffix += 1
 
     summary = one_line_summary(session_body)
     key_points = section_items(session_body, "Decisions Made") or section_items(session_body, "Key Exchanges")
@@ -127,18 +132,17 @@ def build_candidate(session_title: str, session_body: str, all_slugs: list[str])
         details.append(" ".join((key_points or [summary])[:3]))
 
     related = [s for s in all_slugs if s != slug][:3]
-    if not related:
-        related = ["concepts/index-driven-retrieval", "concepts/daily-log-compiler"]
 
     synthesized_points = key_points[:5] if key_points else [summary]
     if actions:
         synthesized_points.extend([f"Follow-up: {a}" for a in actions[:2]])
+    deduped_points = list(dict.fromkeys(synthesized_points))
 
     return ConceptCandidate(
         slug=slug,
         title=base_title,
         summary=summary,
-        key_points=synthesized_points[:5],
+        key_points=deduped_points[:5],
         details=details,
         related=related[:3],
     )
@@ -190,9 +194,13 @@ def write_concept(candidate: ConceptCandidate, source_log: str, date_str: str) -
 
     sources = merge_sources(existing_content, source_log)
 
-    related_lines = "\n".join(
-        f"- [[concepts/{slug}]] - Related through shared implementation context"
-        for slug in candidate.related
+    related_lines = (
+        "\n".join(
+            f"- [[concepts/{slug}]] - Related through shared implementation context"
+            for slug in candidate.related
+        )
+        if candidate.related
+        else "- (none yet)"
     )
     source_lines = "\n".join(f"- [[{src}]] - Compiled from session log evidence" for src in sources)
     points = "\n".join(f"- {point}" for point in candidate.key_points)
@@ -238,16 +246,19 @@ updated: {date_str}
 def upsert_index_rows(index_path: Path, rows: list[str]) -> None:
     existing = index_path.read_text(encoding="utf-8") if index_path.exists() else ""
     lines = existing.splitlines()
-    kept = [ln for ln in lines if not any(row.split("|")[1] in ln for row in rows)]
-    if not kept:
-        kept = [
-            "# Knowledge Base Index",
-            "",
-            "| Article | Summary | Compiled From | Updated |",
-            "|---------|---------|---------------|---------|",
-        ]
-    kept.extend(rows)
-    index_path.write_text("\n".join(kept).rstrip() + "\n", encoding="utf-8")
+    header = [
+        "# Knowledge Base Index",
+        "",
+        "| Article | Summary | Compiled From | Updated |",
+        "|---------|---------|---------------|---------|",
+    ]
+    prefix = lines[:4] if len(lines) >= 4 else header
+    existing_rows = [ln for ln in lines[4:] if ln.strip().startswith("| [[")]
+    new_targets = {row.split("|")[1].strip() for row in rows}
+    filtered_rows = [ln for ln in existing_rows if ln.split("|")[1].strip() not in new_targets]
+    filtered_rows.extend(rows)
+    filtered_rows = sorted(set(filtered_rows), key=str.casefold)
+    index_path.write_text("\n".join(prefix + filtered_rows).rstrip() + "\n", encoding="utf-8")
 
 
 def append_build_log(log_path: Path, log_name: str, created: list[str], updated: list[str]) -> None:

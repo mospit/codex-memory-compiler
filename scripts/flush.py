@@ -20,9 +20,8 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-DAILY_DIR = ROOT / "daily"
-SCRIPTS_DIR = ROOT / "scripts"
+from config import CODE_SCRIPTS_DIR, DAILY_DIR, ROOT_DIR, SCRIPTS_DIR
+
 STATE_FILE = SCRIPTS_DIR / "last-flush.json"
 LOG_FILE = SCRIPTS_DIR / "flush.log"
 
@@ -48,6 +47,12 @@ def load_flush_state() -> dict:
 
 def save_flush_state(state: dict) -> None:
     STATE_FILE.write_text(json.dumps(state), encoding="utf-8")
+
+
+def cleanup_context_file(path: Path) -> None:
+    """Delete ephemeral context files created by ingest helpers."""
+    if ".tmp" in path.parts:
+        path.unlink(missing_ok=True)
 
 
 def append_to_daily_log(content: str, section: str = "Session") -> None:
@@ -169,7 +174,7 @@ def maybe_trigger_compilation() -> None:
         except (json.JSONDecodeError, OSError):
             pass
 
-    compile_script = SCRIPTS_DIR / "compile.py"
+    compile_script = CODE_SCRIPTS_DIR / "compile.py"
     if not compile_script.exists():
         return
 
@@ -183,7 +188,7 @@ def maybe_trigger_compilation() -> None:
 
     try:
         log_handle = open(str(SCRIPTS_DIR / "compile.log"), "a", encoding="utf-8")
-        subprocess.Popen(cmd, stdout=log_handle, stderr=subprocess.STDOUT, cwd=str(ROOT), **kwargs)
+        subprocess.Popen(cmd, stdout=log_handle, stderr=subprocess.STDOUT, cwd=str(ROOT_DIR), **kwargs)
     except Exception as exc:
         logging.error("Failed to spawn compile.py: %s", exc)
 
@@ -211,13 +216,13 @@ def main() -> None:
     state = load_flush_state()
     if state.get("session_id") == session_id and time.time() - state.get("timestamp", 0) < 60:
         logging.info("Skipping duplicate flush for session %s", session_id)
-        context_file.unlink(missing_ok=True)
+        cleanup_context_file(context_file)
         return
 
     context = context_file.read_text(encoding="utf-8").strip()
     if not context:
         logging.info("Context file is empty, skipping")
-        context_file.unlink(missing_ok=True)
+        cleanup_context_file(context_file)
         return
 
     logging.info("Flushing session %s: %d chars", session_id, len(context))
@@ -226,7 +231,7 @@ def main() -> None:
     append_to_daily_log(structured, "Session")
 
     save_flush_state({"session_id": session_id, "timestamp": time.time()})
-    context_file.unlink(missing_ok=True)
+    cleanup_context_file(context_file)
 
     if not args.no_compile_trigger:
         maybe_trigger_compilation()
