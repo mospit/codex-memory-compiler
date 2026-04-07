@@ -1,169 +1,310 @@
-"""
-Compile daily conversation logs into structured knowledge articles.
+"""Compile daily conversation logs into structured knowledge articles.
 
-This is the "LLM compiler" - it reads daily logs (source code) and produces
-organized knowledge articles (the executable).
+This compiler is deterministic and model-agnostic by default so it works in
+Codex app/cloud environments without provider-specific SDK requirements.
 
 Usage:
-    uv run python compile.py                    # compile new/changed logs only
-    uv run python compile.py --all              # force recompile everything
-    uv run python compile.py --file daily/2026-04-01.md  # compile a specific log
-    uv run python compile.py --dry-run          # show what would be compiled
+    uv run python scripts/compile.py
+    uv run python scripts/compile.py --all
+    uv run python scripts/compile.py --file daily/2026-04-01.md
+    uv run python scripts/compile.py --dry-run
 """
 
 from __future__ import annotations
 
 import argparse
-import asyncio
+import re
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
-from config import AGENTS_FILE, CONCEPTS_DIR, CONNECTIONS_DIR, DAILY_DIR, KNOWLEDGE_DIR, now_iso
-from utils import (
-    file_hash,
-    list_raw_files,
-    list_wiki_articles,
-    load_state,
-    read_wiki_index,
-    save_state,
-)
+from config import CONCEPTS_DIR, CONNECTIONS_DIR, DAILY_DIR, KNOWLEDGE_DIR, now_iso
+from utils import file_hash, list_raw_files, list_wiki_articles, load_state, save_state, slugify
 
-# ── Paths for the LLM to use ──────────────────────────────────────────
 ROOT_DIR = Path(__file__).resolve().parent.parent
 
 
-async def compile_daily_log(log_path: Path, state: dict) -> float:
-    """Compile a single daily log into knowledge articles.
+@dataclass(slots=True)
+class ConceptCandidate:
+    slug: str
+    title: str
+    summary: str
+    key_points: list[str]
+    details: list[str]
+    related: list[str]
 
-    Returns the API cost of the compilation.
-    """
-    from claude_agent_sdk import (
-        AssistantMessage,
-        ClaudeAgentOptions,
-        ResultMessage,
-        TextBlock,
-        query,
+
+def ensure_knowledge_scaffold() -> None:
+    KNOWLEDGE_DIR.mkdir(parents=True, exist_ok=True)
+    CONCEPTS_DIR.mkdir(parents=True, exist_ok=True)
+    CONNECTIONS_DIR.mkdir(parents=True, exist_ok=True)
+
+    index_path = KNOWLEDGE_DIR / "index.md"
+    if not index_path.exists():
+        index_path.write_text(
+            "# Knowledge Base Index\n\n"
+            "| Article | Summary | Compiled From | Updated |\n"
+            "|---------|---------|---------------|---------|\n",
+            encoding="utf-8",
+        )
+
+    log_path = KNOWLEDGE_DIR / "log.md"
+    if not log_path.exists():
+        log_path.write_text("# Build Log\n\n", encoding="utf-8")
+
+
+def parse_sessions(log_content: str) -> list[tuple[str, str]]:
+    """Return list of (session_title, session_body)."""
+    pattern = re.compile(r"^###\s+(.+)$", flags=re.MULTILINE)
+    matches = list(pattern.finditer(log_content))
+    sessions: list[tuple[str, str]] = []
+    for i, match in enumerate(matches):
+        start = match.end()
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(log_content)
+        title = match.group(1).strip()
+        body = log_content[start:end].strip()
+        if body:
+            sessions.append((title, body))
+    return sessions
+
+
+def section_items(body: str, heading: str) -> list[str]:
+    pattern = re.compile(
+        rf"\*\*{re.escape(heading)}:\*\*\s*(.*?)"
+        r"(?=\n\*\*[A-Za-z ]+:\*\*|\Z)",
+        flags=re.DOTALL,
+    )
+    match = pattern.search(body)
+    if not match:
+        return []
+
+    raw = match.group(1)
+    items: list[str] = []
+    for line in raw.splitlines():
+        clean = line.strip()
+        if not clean:
+            continue
+        clean = re.sub(r"^-\s*(\[[ xX]\]\s*)?", "", clean)
+        if clean:
+            items.append(clean)
+    return items
+
+
+def one_line_summary(body: str) -> str:
+    context = section_items(body, "Context")
+    if context:
+        return context[0][:140]
+
+    plain = re.sub(r"\s+", " ", body).strip()
+    return plain[:140] if plain else "Compiled knowledge extracted from daily log session."
+
+
+def build_candidate(session_title: str, session_body: str, all_slugs: list[str]) -> ConceptCandidate:
+    base_title = re.sub(r"\(\d{1,2}:\d{2}\)", "", session_title).strip(" -")
+    base_title = base_title or "Session Concept"
+
+    slug = slugify(base_title)
+    if not slug:
+        slug = "session-concept"
+
+    summary = one_line_summary(session_body)
+    key_points = section_items(session_body, "Decisions Made") or section_items(session_body, "Key Exchanges")
+    lessons = section_items(session_body, "Lessons Learned")
+    actions = section_items(session_body, "Action Items")
+
+    details = []
+    if lessons:
+        details.append(
+            "Lessons captured from the session indicate practical constraints, gotchas, "
+            "and reusable patterns that should be applied in future implementations."
+        )
+        details.append(" ".join(lessons[:3]))
+    else:
+        details.append(
+            "This concept was derived from a daily session entry and summarizes recurring "
+            "implementation behavior observed during repository work."
+        )
+        details.append(" ".join((key_points or [summary])[:3]))
+
+    related = [s for s in all_slugs if s != slug][:3]
+    if not related:
+        related = ["concepts/index-driven-retrieval", "concepts/daily-log-compiler"]
+
+    synthesized_points = key_points[:5] if key_points else [summary]
+    if actions:
+        synthesized_points.extend([f"Follow-up: {a}" for a in actions[:2]])
+
+    return ConceptCandidate(
+        slug=slug,
+        title=base_title,
+        summary=summary,
+        key_points=synthesized_points[:5],
+        details=details,
+        related=related[:3],
     )
 
-    log_content = log_path.read_text(encoding="utf-8")
-    schema = AGENTS_FILE.read_text(encoding="utf-8")
-    wiki_index = read_wiki_index()
 
-    # Read existing articles for context
-    existing_articles_context = ""
-    existing = {}
-    for article_path in list_wiki_articles():
-        rel = article_path.relative_to(KNOWLEDGE_DIR)
-        existing[str(rel)] = article_path.read_text(encoding="utf-8")
+def read_frontmatter_dates(content: str) -> tuple[str | None, str | None]:
+    created = None
+    updated = None
+    for line in content.splitlines():
+        if line.startswith("created:"):
+            created = line.split(":", 1)[1].strip()
+        if line.startswith("updated:"):
+            updated = line.split(":", 1)[1].strip()
+    return created, updated
 
-    if existing:
-        parts = []
-        for rel_path, content in existing.items():
-            parts.append(f"### {rel_path}\n```markdown\n{content}\n```")
-        existing_articles_context = "\n\n".join(parts)
 
-    timestamp = now_iso()
+def merge_sources(existing_content: str, new_source: str) -> list[str]:
+    if not existing_content:
+        return [new_source]
 
-    prompt = f"""You are a knowledge compiler. Your job is to read a daily conversation log
-and extract knowledge into structured wiki articles.
+    sources: list[str] = []
+    in_sources = False
+    for line in existing_content.splitlines():
+        if line.strip().startswith("sources:"):
+            in_sources = True
+            continue
+        if in_sources:
+            if line.startswith("  - "):
+                sources.append(line.split("-", 1)[1].strip().strip('"'))
+            elif line.strip() and not line.startswith(" "):
+                break
 
-## Schema (AGENTS.md)
+    if new_source not in sources:
+        sources.append(new_source)
 
-{schema}
+    return sources or [new_source]
 
-## Current Wiki Index
 
-{wiki_index}
+def write_concept(candidate: ConceptCandidate, source_log: str, date_str: str) -> tuple[Path, bool]:
+    concept_path = CONCEPTS_DIR / f"{candidate.slug}.md"
+    created = date_str
+    existing_content = ""
 
-## Existing Wiki Articles
+    if concept_path.exists():
+        existing_content = concept_path.read_text(encoding="utf-8")
+        existing_created, _ = read_frontmatter_dates(existing_content)
+        if existing_created:
+            created = existing_created
 
-{existing_articles_context if existing_articles_context else "(No existing articles yet)"}
+    sources = merge_sources(existing_content, source_log)
 
-## Daily Log to Compile
+    related_lines = "\n".join(
+        f"- [[concepts/{slug}]] - Related through shared implementation context"
+        for slug in candidate.related
+    )
+    source_lines = "\n".join(f"- [[{src}]] - Compiled from session log evidence" for src in sources)
+    points = "\n".join(f"- {point}" for point in candidate.key_points)
+    details = "\n\n".join(candidate.details)
 
-**File:** {log_path.name}
+    content = f"""---
+title: "{candidate.title}"
+aliases: [{candidate.slug}]
+tags: [memory-compiler, codex-workflow]
+sources:
+"""
+    content += "\n".join(f"  - \"{src}\"" for src in sources)
+    content += f"""
+created: {created}
+updated: {date_str}
+---
 
-{log_content}
+# {candidate.title}
 
-## Your Task
+{candidate.summary}
 
-Read the daily log above and compile it into wiki articles following the schema exactly.
+## Key Points
 
-### Rules:
+{points}
 
-1. **Extract key concepts** - Identify 3-7 distinct concepts worth their own article
-2. **Create concept articles** in `knowledge/concepts/` - One .md file per concept
-   - Use the exact article format from AGENTS.md (YAML frontmatter + sections)
-   - Include `sources:` in frontmatter pointing to the daily log file
-   - Use `[[concepts/slug]]` wikilinks to link to related concepts
-   - Write in encyclopedia style - neutral, comprehensive
-3. **Create connection articles** in `knowledge/connections/` if this log reveals non-obvious
-   relationships between 2+ existing concepts
-4. **Update existing articles** if this log adds new information to concepts already in the wiki
-   - Read the existing article, add the new information, add the source to frontmatter
-5. **Update knowledge/index.md** - Add new entries to the table
-   - Each entry: `| [[path/slug]] | One-line summary | source-file | {timestamp[:10]} |`
-6. **Append to knowledge/log.md** - Add a timestamped entry:
-   ```
-   ## [{timestamp}] compile | {log_path.name}
-   - Source: daily/{log_path.name}
-   - Articles created: [[concepts/x]], [[concepts/y]]
-   - Articles updated: [[concepts/z]] (if any)
-   ```
+## Details
 
-### File paths:
-- Write concept articles to: {CONCEPTS_DIR}
-- Write connection articles to: {CONNECTIONS_DIR}
-- Update index at: {KNOWLEDGE_DIR / 'index.md'}
-- Append log at: {KNOWLEDGE_DIR / 'log.md'}
+{details}
 
-### Quality standards:
-- Every article must have complete YAML frontmatter
-- Every article must link to at least 2 other articles via [[wikilinks]]
-- Key Points section should have 3-5 bullet points
-- Details section should have 2+ paragraphs
-- Related Concepts section should have 2+ entries
-- Sources section should cite the daily log with specific claims extracted
+## Related Concepts
+
+{related_lines}
+
+## Sources
+
+{source_lines}
 """
 
-    cost = 0.0
+    concept_path.write_text(content, encoding="utf-8")
+    return concept_path, bool(existing_content)
 
-    try:
-        async for message in query(
-            prompt=prompt,
-            options=ClaudeAgentOptions(
-                cwd=str(ROOT_DIR),
-                system_prompt={"type": "preset", "preset": "claude_code"},
-                allowed_tools=["Read", "Write", "Edit", "Glob", "Grep"],
-                permission_mode="acceptEdits",
-                max_turns=30,
-            ),
-        ):
-            if isinstance(message, AssistantMessage):
-                for block in message.content:
-                    if isinstance(block, TextBlock):
-                        pass  # compilation output - LLM writes files directly
-            elif isinstance(message, ResultMessage):
-                cost = message.total_cost_usd or 0.0
-                print(f"  Cost: ${cost:.4f}")
-    except Exception as e:
-        print(f"  Error: {e}")
-        return 0.0
 
-    # Update state
-    rel_path = log_path.name
-    state.setdefault("ingested", {})[rel_path] = {
+def upsert_index_rows(index_path: Path, rows: list[str]) -> None:
+    existing = index_path.read_text(encoding="utf-8") if index_path.exists() else ""
+    lines = existing.splitlines()
+    kept = [ln for ln in lines if not any(row.split("|")[1] in ln for row in rows)]
+    if not kept:
+        kept = [
+            "# Knowledge Base Index",
+            "",
+            "| Article | Summary | Compiled From | Updated |",
+            "|---------|---------|---------------|---------|",
+        ]
+    kept.extend(rows)
+    index_path.write_text("\n".join(kept).rstrip() + "\n", encoding="utf-8")
+
+
+def append_build_log(log_path: Path, log_name: str, created: list[str], updated: list[str]) -> None:
+    timestamp = now_iso()
+    created_str = ", ".join(created) if created else "(none)"
+    updated_str = ", ".join(updated) if updated else "(none)"
+
+    with open(log_path, "a", encoding="utf-8") as f:
+        f.write(f"## [{timestamp}] compile | {log_name}\n")
+        f.write(f"- Source: daily/{log_name}\n")
+        f.write(f"- Articles created: {created_str}\n")
+        f.write(f"- Articles updated: {updated_str}\n\n")
+
+
+def compile_daily_log(log_path: Path, state: dict) -> tuple[int, int]:
+    ensure_knowledge_scaffold()
+    log_content = log_path.read_text(encoding="utf-8")
+    sessions = parse_sessions(log_content)
+
+    if not sessions:
+        return 0, 0
+
+    existing_slugs = [p.stem for p in list_wiki_articles() if p.parent == CONCEPTS_DIR]
+    index_rows: list[str] = []
+    created_links: list[str] = []
+    updated_links: list[str] = []
+
+    today = now_iso()[:10]
+    source_log = f"daily/{log_path.name}"
+
+    for session_title, session_body in sessions:
+        candidate = build_candidate(session_title, session_body, existing_slugs)
+        concept_path, was_update = write_concept(candidate, source_log, today)
+        existing_slugs.append(candidate.slug)
+
+        link = f"[[concepts/{concept_path.stem}]]"
+        row = f"| {link} | {candidate.summary} | {source_log} | {today} |"
+        index_rows.append(row)
+        if was_update:
+            updated_links.append(link)
+        else:
+            created_links.append(link)
+
+    upsert_index_rows(KNOWLEDGE_DIR / "index.md", index_rows)
+    append_build_log(KNOWLEDGE_DIR / "log.md", log_path.name, created_links, updated_links)
+
+    state.setdefault("ingested", {})[log_path.name] = {
         "hash": file_hash(log_path),
         "compiled_at": now_iso(),
-        "cost_usd": cost,
+        "cost_usd": 0.0,
     }
-    state["total_cost"] = state.get("total_cost", 0.0) + cost
     save_state(state)
 
-    return cost
+    return len(created_links), len(updated_links)
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description="Compile daily logs into knowledge articles")
     parser.add_argument("--all", action="store_true", help="Force recompile all logs")
     parser.add_argument("--file", type=str, help="Compile a specific daily log file")
@@ -172,13 +313,11 @@ def main():
 
     state = load_state()
 
-    # Determine which files to compile
     if args.file:
         target = Path(args.file)
         if not target.is_absolute():
             target = DAILY_DIR / target.name
         if not target.exists():
-            # Try resolving relative to project root
             target = ROOT_DIR / args.file
         if not target.exists():
             print(f"Error: {args.file} not found")
@@ -191,8 +330,7 @@ def main():
         else:
             to_compile = []
             for log_path in all_logs:
-                rel = log_path.name
-                prev = state.get("ingested", {}).get(rel, {})
+                prev = state.get("ingested", {}).get(log_path.name, {})
                 if not prev or prev.get("hash") != file_hash(log_path):
                     to_compile.append(log_path)
 
@@ -207,17 +345,19 @@ def main():
     if args.dry_run:
         return
 
-    # Compile each file sequentially
-    total_cost = 0.0
-    for i, log_path in enumerate(to_compile, 1):
-        print(f"\n[{i}/{len(to_compile)}] Compiling {log_path.name}...")
-        cost = asyncio.run(compile_daily_log(log_path, state))
-        total_cost += cost
-        print(f"  Done.")
+    total_created = 0
+    total_updated = 0
+    for idx, log_path in enumerate(to_compile, 1):
+        print(f"\n[{idx}/{len(to_compile)}] Compiling {log_path.name}...")
+        created, updated = compile_daily_log(log_path, state)
+        total_created += created
+        total_updated += updated
+        print(f"  Created: {created}, Updated: {updated}")
 
     articles = list_wiki_articles()
-    print(f"\nCompilation complete. Total cost: ${total_cost:.2f}")
+    print("\nCompilation complete.")
     print(f"Knowledge base: {len(articles)} articles")
+    print(f"This run: {total_created} created, {total_updated} updated")
 
 
 if __name__ == "__main__":

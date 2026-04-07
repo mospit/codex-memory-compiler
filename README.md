@@ -1,52 +1,68 @@
-# LLM Personal Knowledge Base
+# Codex Memory Compiler
 
-**Your AI conversations compile themselves into a searchable knowledge base.**
+A markdown-first personal memory system designed for **Codex app workflows**.
 
-Adapted from [Karpathy's LLM Knowledge Base](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) architecture, but instead of clipping web articles, the raw data is your own conversations with Claude Code. When a session ends (or auto-compacts mid-session), Claude Code hooks capture the conversation transcript and spawn a background process that uses the [Claude Agent SDK](https://github.com/anthropics/claude-agent-sdk) to extract the important stuff - decisions, lessons learned, patterns, gotchas - and appends it to a daily log. You then compile those daily logs into structured, cross-referenced knowledge articles organized by concept. Retrieval uses a simple index file instead of RAG - no vector database, no embeddings, just markdown.
+This project preserves the original memory-compiler architecture:
+- `daily/` conversation logs as immutable source
+- `knowledge/` compiled concept/connection/Q&A articles
+- `knowledge/index.md` as the retrieval catalog (index-guided, no vector DB required)
+- `knowledge/log.md` as append-only build/query log
 
-Anthropic has clarified that personal use of the Claude Agent SDK is covered under your existing Claude subscription (Max, Team, or Enterprise) - no separate API credits needed. Unlike OpenClaw, which requires API billing for its memory flush, this runs on your subscription.
+## What changed from the original Claude-oriented version
 
-## Quick Start
+- Removed hard runtime dependency on Claude Agent SDK.
+- Added deterministic fallback workflows so the project is useful without hooks.
+- Introduced a thin model adapter boundary (`scripts/model_adapter.py`) for optional future integrations.
+- Repositioned hooks as optional compatibility scaffolding under `integrations/claude-hooks/`.
+- Added Codex repository skills in `.agents/skills/` for ingest/compile/query/lint tasks.
 
-Tell your AI coding agent:
+## Quick start (Codex app first)
 
-> "Clone https://github.com/coleam00/claude-memory-compiler into this project. Set up the Claude Code hooks so my conversations automatically get captured into daily logs, compiled into a knowledge base, and injected back into future sessions. Read the AGENTS.md for the full technical reference on how everything works."
+1. Open this repository in Codex app.
+2. Ask Codex to follow `AGENTS.md`.
+3. Use repository skills:
+   - `.agents/skills/memory-ingest`
+   - `.agents/skills/memory-compile`
+   - `.agents/skills/memory-query`
+   - `.agents/skills/memory-lint`
 
-The agent will:
-1. Clone the repo and run `uv sync` to install dependencies
-2. Copy `.claude/settings.json` into your project (or merge the hooks into your existing settings)
-3. The hooks activate automatically next time you open Claude Code
+Typical loop:
+1. Ingest recent work into `daily/`
+2. Compile daily logs into `knowledge/`
+3. Query the compiled KB
+4. Lint for health and fix issues
 
-From there, your conversations start accumulating. After 6 PM local time, the next session flush automatically triggers compilation of that day's logs into knowledge articles. You can also run `uv run python scripts/compile.py` manually at any time.
-
-## How It Works
-
-```
-Conversation -> SessionEnd/PreCompact hooks -> flush.py extracts knowledge
-    -> daily/YYYY-MM-DD.md -> compile.py -> knowledge/concepts/, connections/, qa/
-        -> SessionStart hook injects index into next session -> cycle repeats
-```
-
-- **Hooks** capture conversations automatically (session end + pre-compaction safety net)
-- **flush.py** calls the Claude Agent SDK to decide what's worth saving, and after 6 PM triggers end-of-day compilation automatically
-- **compile.py** turns daily logs into organized concept articles with cross-references (triggered automatically or run manually)
-- **query.py** answers questions using index-guided retrieval (no RAG needed at personal scale)
-- **lint.py** runs 7 health checks (broken links, orphans, contradictions, staleness)
-
-## Key Commands
+## CLI/manual fallback (works without hooks)
 
 ```bash
-uv run python scripts/compile.py                    # compile new daily logs
-uv run python scripts/query.py "question"            # ask the knowledge base
-uv run python scripts/query.py "question" --file-back # ask + save answer back
-uv run python scripts/lint.py                        # run health checks
-uv run python scripts/lint.py --structural-only      # free structural checks only
+uv sync
+uv run python scripts/ingest.py --text "Worked on migration plan and codex workflow"
+uv run python scripts/compile.py
+uv run python scripts/query.py "What changed in the migration?"
+uv run python scripts/lint.py --structural-only
 ```
 
-## Why No RAG?
+## Commands
 
-Karpathy's insight: at personal scale (50-500 articles), the LLM reading a structured `index.md` outperforms vector similarity. The LLM understands what you're really asking; cosine similarity just finds similar words. RAG becomes necessary at ~2,000+ articles when the index exceeds the context window.
+```bash
+uv run python scripts/ingest.py --text "..."           # manual session ingest
+uv run python scripts/ingest.py --file notes/session.md # ingest from prepared context
+uv run python scripts/compile.py                        # compile new/changed logs
+uv run python scripts/compile.py --all                  # force recompile all logs
+uv run python scripts/query.py "question"               # ask KB
+uv run python scripts/query.py "question" --file-back   # ask + save Q&A article
+uv run python scripts/lint.py                           # structural + semantic reminder
+uv run python scripts/lint.py --structural-only         # structural checks only
+```
 
-## Technical Reference
+## Optional integrations
 
-See **[AGENTS.md](AGENTS.md)** for the complete technical reference: article formats, hook architecture, script internals, cross-platform details, costs, and customization options. AGENTS.md is designed to give an AI agent everything it needs to understand, modify, or rebuild the system.
+- `integrations/claude-hooks/` contains legacy Claude lifecycle hook scripts.
+- These are not required for Codex app usage.
+- If unavailable in your environment, use manual ingest commands.
+
+## Docs
+
+- `AGENTS.md` - Codex operating spec for this repository
+- `MIGRATION_PLAN.md` - migration rationale and phased plan
+- `OPERATING_GUIDE.md` - practical day-to-day usage paths and limitations
