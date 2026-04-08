@@ -32,6 +32,7 @@ uv run python scripts/lint.py --structural-only
 
 ### Daily logs (`daily/`)
 - Append-only session history.
+- Each session entry should include a stable `session_id`, a human title, and a structured `source_type`.
 - Never rewrite historical entries unless explicitly asked.
 
 ### Compiled knowledge (`knowledge/`)
@@ -40,21 +41,24 @@ uv run python scripts/lint.py --structural-only
 - Filed Q&A in `knowledge/qa/`.
 - Every article should include YAML frontmatter with at least:
   - `title`
-  - `sources`
+  - `summary`
+  - `source_sessions`
+  - `source_logs`
   - `created`
   - `updated`
+  - `managed_by` for generated concept/connection/Q&A files
 
 ### Index-driven retrieval
 - Read `knowledge/index.md` first.
-- Consult selected articles from index.
+- Shortlist candidate articles from the index before opening article bodies.
 - Prefer `[[wikilinks]]` in answers and article cross-references.
 
 ## Scripts and Responsibilities
 - `scripts/ingest.py`: manual ingest entrypoint (Codex-friendly fallback).
 - `scripts/flush.py`: context-to-daily-log ingestion (used by manual flow or optional integrations).
-- `scripts/compile.py`: deterministic compile from daily logs into knowledge articles.
-- `scripts/query.py`: deterministic index-guided retrieval; optional file-back into `knowledge/qa/`.
-- `scripts/lint.py`: structural health checks and lint report generation.
+- `scripts/compile.py`: corpus-wide deterministic compile from daily logs into canonical concepts + connections.
+- `scripts/query.py`: deterministic index-guided retrieval with shortlist explanation and optional file-back into `knowledge/qa/`.
+- `scripts/lint.py`: structural health checks, maintenance heuristics, and safe autofixes.
 - `scripts/model_adapter.py`: thin boundary for optional future model integrations.
 
 ## Optional Integrations
@@ -66,6 +70,7 @@ These are **optional compatibility scaffolding**, not core requirements.
 ## Editing Guidelines
 - Preserve markdown knowledge model and directory contracts.
 - Prefer deterministic file operations and explicit index/log updates.
+- Keep concept identity stable through `concept_id` rather than raw session headings.
 - Avoid hidden magic; prioritize maintainability for a solo developer.
 - Keep diffs focused and easy to review.
 

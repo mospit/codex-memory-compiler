@@ -5,7 +5,7 @@ A markdown-first personal memory system designed for **Codex app workflows**.
 This project preserves the original memory-compiler architecture:
 - `daily/` conversation logs as immutable source
 - `knowledge/` compiled concept/connection/Q&A articles
-- `knowledge/index.md` as the retrieval catalog (index-guided, no vector DB required)
+- `knowledge/index.md` as the retrieval catalog for index-guided retrieval
 - `knowledge/log.md` as append-only build/query log
 
 ## What changed from the original Claude-oriented version
@@ -15,6 +15,7 @@ This project preserves the original memory-compiler architecture:
 - Introduced a thin model adapter boundary (`scripts/model_adapter.py`) for optional future integrations.
 - Repositioned hooks as optional compatibility scaffolding under `integrations/claude-hooks/`.
 - Added Codex repository skills in `.agents/skills/` for ingest/compile/query/lint tasks.
+- Added stable session metadata, canonical concept merging, deterministic connection generation, and fixture-based tests.
 
 ## Quick start (Codex app first)
 
@@ -28,31 +29,46 @@ This project preserves the original memory-compiler architecture:
 
 Typical loop:
 1. Ingest recent work into `daily/`
-2. Compile daily logs into `knowledge/`
-3. Query the compiled KB
-4. Lint for health and fix issues
+2. Compile the daily-log corpus into `knowledge/`
+3. Query the compiled KB through the index
+4. Lint for health and apply safe autofixes when needed
 
 ## CLI/manual fallback (works without hooks)
 
 ```bash
 uv sync
-uv run python scripts/ingest.py --text "Worked on migration plan and codex workflow"
+uv run python scripts/ingest.py --text "Worked on migration plan and codex workflow" --source-type codex-summary
 uv run python scripts/compile.py
-uv run python scripts/query.py "What changed in the migration?"
-uv run python scripts/lint.py --structural-only
+uv run python scripts/query.py "What changed in the migration?" --explain
+uv run python scripts/lint.py --autofix
 ```
 
 ## Commands
 
 ```bash
 uv run python scripts/ingest.py --text "..."           # manual session ingest
-uv run python scripts/ingest.py --file notes/session.md # ingest from prepared context
-uv run python scripts/compile.py                        # compile new/changed logs
+uv run python scripts/ingest.py --text "..." --title "Auth Migration" --source-type codex-summary
+uv run python scripts/ingest.py --file notes/session.md --session-id codex-manual-001
+uv run python scripts/compile.py                        # rebuild KB from the daily-log corpus when changes exist
 uv run python scripts/compile.py --all                  # force recompile all logs
-uv run python scripts/query.py "question"               # ask KB
+uv run python scripts/query.py "question"               # ask KB through index-guided shortlisting
+uv run python scripts/query.py "question" --explain     # show shortlist and ranking reasons
 uv run python scripts/query.py "question" --file-back   # ask + save Q&A article
-uv run python scripts/lint.py                           # structural + semantic reminder
+uv run python scripts/lint.py                           # structural + conflict heuristic checks
+uv run python scripts/lint.py --autofix                 # repair stale index rows and missing backlinks
 uv run python scripts/lint.py --structural-only         # structural checks only
+```
+
+## Data model
+
+- Daily sessions now carry stable `session_id`, `title`, `source_type`, and optional `workspace` / `repo` / `task_ref` metadata.
+- Compiled concept articles carry `concept_id`, `aliases`, `keywords`, `summary`, `source_sessions`, and `source_logs`.
+- Connection articles are generated deterministically when concept co-occurrence reaches the configured threshold.
+
+## Tests
+
+```bash
+py -3 -m unittest discover -s tests -v
 ```
 
 ## Optional integrations

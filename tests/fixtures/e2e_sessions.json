@@ -1,0 +1,42 @@
+[
+  {
+    "now": "2026-04-08T09:15:00-05:00",
+    "session_id": "s1",
+    "title": "Auth Migration Decisions",
+    "source_type": "codex-summary",
+    "workspace": "D:/work/prism-portal",
+    "repo": "prism/portal",
+    "task_ref": "PRISM-101",
+    "text": "Decided to use auth redirect guards for the portal migration and noted the legacy token bug."
+  },
+  {
+    "now": "2026-04-08T09:25:00-05:00",
+    "session_id": "s2",
+    "title": "Authentication Migration Follow Up",
+    "source_type": "codex-summary",
+    "workspace": "D:/work/prism-portal",
+    "repo": "prism/portal",
+    "task_ref": "PRISM-101",
+    "text": "Authentication migration follow up: keep the redirect guard pattern and avoid the legacy token fallback."
+  },
+  {
+    "now": "2026-04-08T09:35:00-05:00",
+    "session_id": "s3",
+    "title": "API Design Review",
+    "source_type": "pr-summary",
+    "workspace": "D:/work/prism-portal",
+    "repo": "prism/portal",
+    "task_ref": "PRISM-202",
+    "text": "API design review for the portal auth migration. Prefer the shared API contract and keep authentication migration aligned with the API design."
+  },
+  {
+    "now": "2026-04-08T09:45:00-05:00",
+    "session_id": "s4",
+    "title": "Portal API Design",
+    "source_type": "note",
+    "workspace": "D:/work/prism-portal",
+    "repo": "prism/portal",
+    "task_ref": "PRISM-203",
+    "text": "Portal API design handoff. Avoid disabling the shared API contract and keep auth migration aligned with API design during redirect rollout."
+  }
+]

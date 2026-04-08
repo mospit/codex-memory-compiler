@@ -1,160 +1,263 @@
-"""Query the knowledge base via deterministic index-guided retrieval.
-
-Usage:
-    uv run python scripts/query.py "How should I handle auth redirects?"
-    uv run python scripts/query.py "What patterns do I use for API design?" --file-back
-"""
+"""Query the knowledge base via deterministic index-guided retrieval."""
 
 from __future__ import annotations
 
 import argparse
-import re
 from collections import Counter
+from dataclasses import dataclass
 from pathlib import Path
 
-from config import KNOWLEDGE_DIR, QA_DIR, now_iso
-from utils import extract_wikilinks, list_wiki_articles, load_state, save_state, slugify
-
-STOPWORDS = {
-    "the", "a", "an", "to", "for", "of", "and", "or", "in", "on", "is", "are",
-    "do", "i", "my", "me", "with", "what", "how", "should", "use", "you",
-}
-
-
-def tokenize(text: str) -> list[str]:
-    tokens = re.findall(r"[a-zA-Z0-9-]+", text.lower())
-    return [t for t in tokens if t not in STOPWORDS and len(t) > 2]
-
-
-def score_article(question_tokens: list[str], content: str, path: Path) -> int:
-    words = tokenize(content)
-    counts = Counter(words)
-    score = sum(counts[t] for t in question_tokens)
-
-    path_tokens = set(tokenize(path.stem.replace("-", " ")))
-    score += sum(3 for t in question_tokens if t in path_tokens)
-    return score
+from config import LOG_FILE, QA_DIR, now_iso
+from utils import (
+    MANAGED_BY,
+    extract_keywords,
+    load_state,
+    read_index_entries,
+    read_markdown_article,
+    rebuild_index,
+    save_state,
+    slugify,
+    tokenize,
+    trim_sentence,
+    write_markdown_article,
+)
 
 
-def top_articles(question: str, limit: int = 6) -> list[Path]:
-    q_tokens = tokenize(question)
-    scored: list[tuple[int, Path]] = []
+@dataclass(slots=True)
+class RankedArticle:
+    """A shortlisted article with index and content scores."""
 
-    for article in list_wiki_articles():
-        content = article.read_text(encoding="utf-8")
-        score = score_article(q_tokens, content, article)
-        if score > 0:
-            scored.append((score, article))
+    link: str
+    path: Path
+    article_type: str
+    summary: str
+    keywords: list[str]
+    sources: list[str]
+    updated: str
+    index_score: int
+    content_score: int
+    reasons: list[str]
 
-    scored.sort(key=lambda x: x[0], reverse=True)
-    return [p for _, p in scored[:limit]]
+    @property
+    def total_score(self) -> int:
+        return self.index_score + self.content_score
 
 
-def summarize_article(path: Path, tokens: list[str]) -> str:
-    lines = [ln.strip() for ln in path.read_text(encoding="utf-8").splitlines() if ln.strip()]
-    candidates = []
+def score_index_entry(question_tokens: list[str], entry) -> tuple[int, list[str]]:
+    """Score an index row before opening the article."""
+    reasons: list[str] = []
+    score = 0
 
-    for ln in lines:
-        if ln.startswith("#") or ln.startswith("---"):
+    keyword_counts = Counter(tokenize(" ".join(entry.keywords)))
+    keyword_hits = sum(keyword_counts[token] for token in question_tokens)
+    if keyword_hits:
+        score += keyword_hits * 4
+        reasons.append(f"keyword hits={keyword_hits}")
+
+    link_tokens = set(tokenize(entry.link.replace("/", " ")))
+    link_hits = sum(1 for token in question_tokens if token in link_tokens)
+    if link_hits:
+        score += link_hits * 3
+        reasons.append(f"path hits={link_hits}")
+
+    summary_counts = Counter(tokenize(entry.summary))
+    summary_hits = sum(summary_counts[token] for token in question_tokens)
+    if summary_hits:
+        score += summary_hits * 2
+        reasons.append(f"summary hits={summary_hits}")
+
+    return score, reasons
+
+
+def shortlist_articles(question: str, limit: int = 8) -> list[RankedArticle]:
+    """Read the index first, then shortlist candidate articles."""
+    entries = read_index_entries()
+    if not entries:
+        return []
+
+    question_tokens = tokenize(question)
+    ranked: list[RankedArticle] = []
+    for entry in entries:
+        index_score, reasons = score_index_entry(question_tokens, entry)
+        if index_score <= 0 or not entry.path.exists():
             continue
-        score = sum(1 for t in tokens if t in ln.lower())
-        if score:
-            candidates.append((score, ln))
+        ranked.append(
+            RankedArticle(
+                link=entry.link,
+                path=entry.path,
+                article_type=entry.article_type,
+                summary=entry.summary,
+                keywords=entry.keywords,
+                sources=entry.sources,
+                updated=entry.updated,
+                index_score=index_score,
+                content_score=0,
+                reasons=reasons,
+            )
+        )
 
-    if candidates:
-        candidates.sort(key=lambda x: x[0], reverse=True)
-        return candidates[0][1]
-
-    for ln in lines:
-        if ln.startswith("- "):
-            return ln[2:]
-
-    return "No concise summary available from this article."
+    ranked.sort(key=lambda article: (-article.index_score, article.link))
+    return ranked[:limit]
 
 
-def build_answer(question: str, articles: list[Path]) -> str:
-    q_tokens = tokenize(question)
+def score_article_content(question_tokens: list[str], path: Path) -> tuple[int, str]:
+    """Open the article and score the actual content."""
+    frontmatter, body = read_markdown_article(path)
+    summary = str(frontmatter.get("summary") or "")
+    combined = " ".join([summary, body])
+    counts = Counter(tokenize(combined))
+    score = sum(counts[token] for token in question_tokens)
 
+    snippet_candidates: list[tuple[int, str]] = []
+    current_section = ""
+    for line in body.splitlines():
+        clean = line.strip()
+        if not clean or clean.startswith("#") or clean.startswith("---"):
+            if clean.startswith("## "):
+                current_section = clean[3:].strip().lower()
+            continue
+        if current_section in {"related concepts", "sources"}:
+            continue
+        if clean.startswith("- [["):
+            continue
+        clean = clean[2:] if clean.startswith("- ") else clean
+        line_score = sum(1 for token in question_tokens if token in tokenize(clean))
+        if line_score:
+            snippet_candidates.append((line_score, clean))
+
+    if snippet_candidates:
+        snippet_candidates.sort(key=lambda item: (-item[0], len(item[1])))
+        return score, trim_sentence(snippet_candidates[0][1], 180)
+
+    if summary:
+        return score, trim_sentence(summary, 180)
+
+    fallback = trim_sentence(body.strip().splitlines()[0] if body.strip() else "No concise summary available.", 180)
+    return score, fallback
+
+
+def select_articles(question: str, shortlist_limit: int = 8, consult_limit: int = 4) -> list[RankedArticle]:
+    """Shortlist from the index, then rerank by actual article content."""
+    question_tokens = tokenize(question)
+    shortlist = shortlist_articles(question, limit=shortlist_limit)
+    consulted: list[RankedArticle] = []
+
+    for candidate in shortlist:
+        content_score, snippet = score_article_content(question_tokens, candidate.path)
+        reasons = [*candidate.reasons, f"content hits={content_score}"]
+        consulted.append(
+            RankedArticle(
+                link=candidate.link,
+                path=candidate.path,
+                article_type=candidate.article_type,
+                summary=snippet,
+                keywords=candidate.keywords,
+                sources=candidate.sources,
+                updated=candidate.updated,
+                index_score=candidate.index_score,
+                content_score=content_score,
+                reasons=reasons,
+            )
+        )
+
+    consulted.sort(key=lambda article: (-article.total_score, -article.index_score, article.link))
+    return consulted[:consult_limit]
+
+
+def confidence_label(articles: list[RankedArticle]) -> str:
+    """Return a coarse confidence label based on ranking strength."""
+    if not articles:
+        return "low"
+
+    top_score = articles[0].total_score
+    supporting = sum(1 for article in articles if article.total_score > 0)
+    if top_score >= 12 and supporting >= 2:
+        return "high"
+    if top_score >= 7:
+        return "medium"
+    return "low"
+
+
+def build_answer(question: str, articles: list[RankedArticle], *, explain: bool) -> str:
+    """Build a deterministic answer from shortlisted articles."""
     if not articles:
         return (
             "I could not find relevant compiled knowledge for that question. "
-            "Try compiling newer daily logs first with `uv run python scripts/compile.py`."
+            "Compile recent daily logs first with `uv run python scripts/compile.py`."
         )
 
-    lines = ["## Answer", ""]
-    lines.append("Based on the most relevant knowledge articles:")
+    confidence = confidence_label(articles)
+    lines = ["## Answer", "", f"Confidence: {confidence}", ""]
+    lines.append("Most relevant compiled knowledge:")
     lines.append("")
-
-    consulted_links: list[str] = []
     for article in articles:
-        rel = article.relative_to(KNOWLEDGE_DIR).as_posix().replace(".md", "")
-        consulted_links.append(f"[[{rel}]]")
-        summary = summarize_article(article, q_tokens)
-        lines.append(f"- [[{rel}]]: {summary}")
+        lines.append(f"- [[{article.link}]] ({article.article_type}): {article.summary}")
 
-    lines.append("")
-    lines.append("## Synthesis")
-    lines.append("")
-    lines.append(
-        "The retrieved articles suggest consistent practices around the topics above. "
-        "Use the cited pages as canonical references and update them after each new session "
-        "so future answers improve."
+    lines.extend(
+        [
+            "",
+            "## Synthesis",
+            "",
+            "The shortlist clusters around the cited pages above. Treat those articles as the current canonical memory, and recompile after new sessions if the answer feels incomplete.",
+            "",
+            "## Sources Consulted",
+        ]
     )
-    lines.append("")
-    lines.append("## Sources Consulted")
-    lines.extend(f"- {link}" for link in consulted_links)
+    lines.extend(f"- [[{article.link}]]" for article in articles)
+
+    if explain:
+        lines.extend(["", "## Retrieval Notes", ""])
+        for article in articles:
+            lines.append(
+                f"- [[{article.link}]]: total={article.total_score}, index={article.index_score}, content={article.content_score}; {', '.join(article.reasons)}"
+            )
 
     return "\n".join(lines)
 
 
-def file_back_answer(question: str, answer: str, articles: list[Path]) -> Path:
+def file_back_answer(question: str, answer: str, articles: list[RankedArticle]) -> Path:
+    """Persist a Q&A article and rebuild the index."""
     QA_DIR.mkdir(parents=True, exist_ok=True)
     slug = slugify(question) or "query-answer"
     qa_path = QA_DIR / f"{slug}.md"
+    consulted = [article.link for article in articles]
+    confidence = confidence_label(articles)
+    keywords = extract_keywords((question, 5), limit=6)
 
-    consulted = [a.relative_to(KNOWLEDGE_DIR).as_posix().replace(".md", "") for a in articles]
-    consulted_yaml = "\n".join(f"  - \"{item}\"" for item in consulted)
-    consulted_md = "\n".join(f"- [[{item}]] - Consulted during deterministic retrieval" for item in consulted)
+    source_section = [f"- [[{item}]]" for item in consulted] if consulted else ["- (none)"]
+    body_sections = [
+        f"# Q: {question}",
+        "",
+        answer,
+        "",
+        "## Sources Consulted",
+        *source_section,
+        "",
+        "## Follow-Up Questions",
+        "- Which daily logs should be recompiled to improve coverage?",
+        "- Does this answer need a new connection article?",
+    ]
 
-    content = f"""---
-title: "Q: {question}"
-question: "{question}"
-consulted:
-{consulted_yaml if consulted_yaml else '  - "(none)"'}
-filed: {now_iso()[:10]}
----
+    frontmatter = {
+        "managed_by": MANAGED_BY,
+        "title": f"Q: {question}",
+        "question": question,
+        "summary": trim_sentence(f"Filed answer for: {question}", 140),
+        "keywords": keywords,
+        "consulted": consulted,
+        "confidence": confidence,
+        "filed": now_iso()[:10],
+        "updated": now_iso()[:10],
+    }
+    write_markdown_article(qa_path, frontmatter, "\n".join(body_sections))
+    rebuild_index()
 
-# Q: {question}
-
-{answer}
-
-## Sources Consulted
-
-{consulted_md if consulted_md else '- (none)'}
-
-## Follow-Up Questions
-
-- Which daily logs should be recompiled to improve coverage?
-- Does this answer need a connection article?
-"""
-
-    qa_path.write_text(content, encoding="utf-8")
-
-    index_path = KNOWLEDGE_DIR / "index.md"
-    row = f"| [[qa/{qa_path.stem}]] | Filed answer for: {question[:80]} | query | {now_iso()[:10]} |"
-    if index_path.exists():
-        index_text = index_path.read_text(encoding="utf-8")
-        if row not in index_text:
-            index_path.write_text(index_text.rstrip() + "\n" + row + "\n", encoding="utf-8")
-
-    log_path = KNOWLEDGE_DIR / "log.md"
-    if log_path.exists():
-        with open(log_path, "a", encoding="utf-8") as f:
-            consulted_links = ", ".join(f"[[{c}]]" for c in consulted) if consulted else "(none)"
-            f.write(f"## [{now_iso()}] query (filed) | {question[:72]}\n")
-            f.write(f"- Question: {question}\n")
-            f.write(f"- Consulted: {consulted_links}\n")
-            f.write(f"- Filed to: [[qa/{qa_path.stem}]]\n\n")
+    with open(LOG_FILE, "a", encoding="utf-8") as handle:
+        consulted_links = ", ".join(f"[[{item}]]" for item in consulted) if consulted else "(none)"
+        handle.write(f"## [{now_iso()}] query (filed)\n")
+        handle.write(f"- Question: {question}\n")
+        handle.write(f"- Consulted: {consulted_links}\n")
+        handle.write(f"- Filed to: [[qa/{qa_path.stem}]]\n\n")
 
     return qa_path
 
@@ -163,20 +266,22 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Query the personal knowledge base")
     parser.add_argument("question", help="The question to ask")
     parser.add_argument("--file-back", action="store_true", help="Save answer as knowledge/qa article")
+    parser.add_argument("--explain", action="store_true", help="Show retrieval notes and scores")
     args = parser.parse_args()
 
-    articles = top_articles(args.question)
-    answer = build_answer(args.question, articles)
+    articles = select_articles(args.question)
+    answer = build_answer(args.question, articles, explain=args.explain)
 
     print(f"Question: {args.question}")
     print(f"File back: {'yes' if args.file_back else 'no'}")
+    print(f"Explain: {'yes' if args.explain else 'no'}")
     print("-" * 60)
     print(answer)
 
     if args.file_back:
         qa_path = file_back_answer(args.question, answer, articles)
         print("\n" + "-" * 60)
-        print(f"Answer filed to {qa_path.relative_to(KNOWLEDGE_DIR.parent)}")
+        print(f"Answer filed to {qa_path.relative_to(QA_DIR.parent)}")
 
     state = load_state()
     state["query_count"] = state.get("query_count", 0) + 1

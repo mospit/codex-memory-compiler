@@ -14,9 +14,11 @@ Use this skill when asked to compile memories into the markdown KB.
    - `knowledge/concepts/*.md`
    - `knowledge/index.md`
    - `knowledge/log.md`
-4. Run lint after compile: `uv run python scripts/lint.py --structural-only`.
+   - `knowledge/connections/*.md`
+4. Remember that compile rebuilds the KB using the full daily-log corpus so concept merging stays deterministic.
+5. Run lint after compile: `uv run python scripts/lint.py --autofix`.
 
 ## Quality checks
-- Articles must retain YAML frontmatter.
-- Index rows must point to actual article paths.
+- Articles must retain YAML frontmatter with `concept_id` / `connection_id`, `summary`, `source_sessions`, and `source_logs`.
+- Index rows must point to actual article paths and reflect current summaries.
 - Build log entries must be append-only.

@@ -1,0 +1,28 @@
+Question: What did I decide about auth migration?
+File back: no
+Explain: yes
+------------------------------------------------------------
+## Answer
+
+Confidence: high
+
+Most relevant compiled knowledge:
+
+- [[concepts/authentication-migration]] (concept): Decided to use auth redirect guards for the portal migration and noted the legacy token bug.
+- [[concepts/api-design]] (concept): Portal API design handoff. Avoid disabling the shared API contract and keep auth migration aligned with API design during redirect rollout.
+- [[connections/api-design__authentication-migration]] (connection): API Design and Authentication Migration co-occurred in 2 session(s).
+
+## Synthesis
+
+The shortlist clusters around the cited pages above. Treat those articles as the current canonical memory, and recompile after new sessions if the answer feels incomplete.
+
+## Sources Consulted
+- [[concepts/authentication-migration]]
+- [[concepts/api-design]]
+- [[connections/api-design__authentication-migration]]
+
+## Retrieval Notes
+
+- [[concepts/authentication-migration]]: total=38, index=18, content=20; keyword hits=2, path hits=2, summary hits=2, content hits=20
+- [[concepts/api-design]]: total=36, index=12, content=24; keyword hits=1, summary hits=4, content hits=24
+- [[connections/api-design__authentication-migration]]: total=28, index=14, content=14; keyword hits=1, path hits=2, summary hits=2, content hits=14
