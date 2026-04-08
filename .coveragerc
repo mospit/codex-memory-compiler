@@ -1,0 +1,9 @@
+[run]
+parallel = True
+source = scripts
+
+[report]
+include =
+    scripts/*.py
+fail_under = 80
+show_missing = True

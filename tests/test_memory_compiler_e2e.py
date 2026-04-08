@@ -1,60 +1,12 @@
 from __future__ import annotations
 
 import json
-import os
-import shutil
-import subprocess
-import sys
-import tempfile
 import unittest
-from pathlib import Path
+
+from tests.support import FIXTURES_DIR, GOLDEN_DIR, KBScriptTestCase, normalize_text
 
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-FIXTURES_DIR = REPO_ROOT / "tests" / "fixtures"
-GOLDEN_DIR = FIXTURES_DIR / "golden"
-SCRIPT_DIR = REPO_ROOT / "scripts"
-
-
-def normalize_text(text: str) -> str:
-    return text.replace("\r\n", "\n").strip() + "\n"
-
-
-class MemoryCompilerE2ETest(unittest.TestCase):
-    maxDiff = None
-
-    def setUp(self) -> None:
-        self.temp_dir = tempfile.TemporaryDirectory(prefix="codex-memory-compiler-tests-")
-        self.kb_root = Path(self.temp_dir.name)
-
-    def tearDown(self) -> None:
-        self.temp_dir.cleanup()
-
-    def run_script(self, script_name: str, *args: str, now: str) -> subprocess.CompletedProcess[str]:
-        env = os.environ.copy()
-        env["KB_ROOT_DIR"] = str(self.kb_root)
-        env["KB_NOW"] = now
-        return subprocess.run(
-            [sys.executable, str(SCRIPT_DIR / script_name), *args],
-            cwd=REPO_ROOT,
-            env=env,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-
-    def assert_matches_golden(self, actual_path: Path, golden_path: Path) -> None:
-        actual = normalize_text(actual_path.read_text(encoding="utf-8"))
-        expected = normalize_text(golden_path.read_text(encoding="utf-8"))
-        self.assertEqual(actual, expected, actual_path.as_posix())
-
-    def copy_fixture_tree(self, source: Path) -> None:
-        for item in source.iterdir():
-            destination = self.kb_root / item.name
-            if item.is_dir():
-                shutil.copytree(item, destination)
-            else:
-                shutil.copy2(item, destination)
+class MemoryCompilerE2ETest(KBScriptTestCase):
 
     def test_ingest_compile_query_and_lint_match_golden_files(self) -> None:
         sessions = json.loads((FIXTURES_DIR / "e2e_sessions.json").read_text(encoding="utf-8"))
@@ -147,6 +99,53 @@ class MemoryCompilerE2ETest(unittest.TestCase):
 
         platform_auth = (self.kb_root / "knowledge" / "concepts" / "platform-auth.md").read_text(encoding="utf-8")
         self.assertIn("[[concepts/api-design]] - Added by lint autofix", platform_auth)
+
+    def test_codex_chat_file_ingest_can_compile_and_lint_in_one_command(self) -> None:
+        transcript = FIXTURES_DIR / "codex_chat_sample.md"
+        result = self.run_script(
+            "ingest.py",
+            "--codex-chat-file",
+            str(transcript),
+            "--session-id",
+            "codex-chat-001",
+            "--title",
+            "Codex Chat Capture",
+            "--workspace",
+            "D:/projects/product/codex-memory-compiler",
+            "--repo",
+            "mospit/codex-memory-compiler",
+            "--task-ref",
+            "dogfood-002",
+            "--compile",
+            "--lint",
+            now="2026-04-09T09:00:00-05:00",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+        daily_text = (self.kb_root / "daily" / "2026-04-09.md").read_text(encoding="utf-8")
+        self.assertIn("**Source Type:** codex-chat", daily_text)
+        self.assertIn("**Session ID:** codex-chat-001", daily_text)
+        self.assertIn("Codex Chat Capture", daily_text)
+
+        concept_files = list((self.kb_root / "knowledge" / "concepts").glob("*.md"))
+        self.assertEqual(len(concept_files), 1)
+        concept_stem = concept_files[0].stem
+
+        index_text = (self.kb_root / "knowledge" / "index.md").read_text(encoding="utf-8")
+        self.assertIn(f"[[concepts/{concept_stem}]]", index_text)
+
+        query_result = self.run_script(
+            "query.py",
+            "How should I test the project on itself?",
+            "--explain",
+            now="2026-04-09T09:10:00-05:00",
+        )
+        self.assertEqual(query_result.returncode, 0, query_result.stderr)
+        self.assertIn(f"[[concepts/{concept_stem}]]", query_result.stdout)
+
+        lint_report = (self.kb_root / "reports" / "lint-2026-04-09.md").read_text(encoding="utf-8")
+        self.assertIn("Warnings: 1", lint_report)
+        self.assertIn("Orphan page", lint_report)
 
 
 if __name__ == "__main__":

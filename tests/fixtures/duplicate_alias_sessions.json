@@ -1,0 +1,18 @@
+[
+  {
+    "session_id": "alias-1",
+    "title": "Platform Auth",
+    "source_type": "codex-summary",
+    "task_ref": "",
+    "text": "We decided to keep platform auth stable for the shared auth rollout and document the platform auth path clearly.",
+    "now": "2026-04-10T09:00:00-05:00"
+  },
+  {
+    "session_id": "alias-2",
+    "title": "Shared Auth Cleanup",
+    "source_type": "codex-summary",
+    "task_ref": "platform-auth",
+    "text": "The shared auth cleanup should stay aligned with the platform auth rollout and keep the platform auth contract stable.",
+    "now": "2026-04-10T09:05:00-05:00"
+  }
+]

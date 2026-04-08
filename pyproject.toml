@@ -8,5 +8,10 @@ dependencies = [
     "tzdata>=2024.1",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "coverage>=7.9.0",
+]
+
 [tool.ruff]
 line-length = 100

@@ -17,7 +17,7 @@ from utils import derive_title_from_text, extract_keywords, trim_sentence
 SCRIPT_DIR = Path(__file__).resolve().parent
 STATE_FILE = SCRIPTS_DIR / "last-flush.json"
 LOG_FILE = SCRIPTS_DIR / "flush.log"
-SOURCE_TYPES = ("note", "codex-summary", "commit-summary", "pr-summary")
+SOURCE_TYPES = ("note", "codex-summary", "commit-summary", "pr-summary", "codex-chat")
 
 SCRIPTS_DIR.mkdir(parents=True, exist_ok=True)
 logging.basicConfig(
@@ -73,33 +73,67 @@ def append_to_daily_log(content: str, title: str) -> None:
         handle.write(entry)
 
 
-def parse_dialogue_lines(context: str) -> tuple[list[str], list[str]]:
-    """Extract explicit user and assistant lines from markdown context."""
-    user_lines: list[str] = []
-    assistant_lines: list[str] = []
+def parse_dialogue_turns(context: str) -> tuple[list[str], list[str]]:
+    """Extract explicit user and assistant turn blocks from markdown context."""
+    turns: list[tuple[str, list[str]]] = []
+    current_role: str | None = None
+    current_lines: list[str] = []
+
+    def flush_current() -> None:
+        nonlocal current_role, current_lines
+        if not current_role:
+            return
+        rendered = "\n".join(current_lines).strip()
+        if rendered:
+            turns.append((current_role, current_lines[:]))
+        current_role = None
+        current_lines = []
 
     for raw in context.splitlines():
-        line = raw.strip()
-        if not line:
-            continue
-
-        user_match = re.match(r"^(?:\*\*User:\*\*|User:)\s*(.+)$", line, flags=re.IGNORECASE)
+        stripped = raw.strip()
+        user_match = re.match(r"^(?:\*\*User:\*\*|User:)\s*(.*)$", stripped, flags=re.IGNORECASE)
         if user_match:
-            user_lines.append(user_match.group(1).strip())
+            flush_current()
+            current_role = "user"
+            first_line = user_match.group(1).strip()
+            current_lines = [first_line] if first_line else []
             continue
 
         assistant_match = re.match(
-            r"^(?:\*\*Assistant:\*\*|Assistant:)\s*(.+)$",
-            line,
+            r"^(?:\*\*Assistant:\*\*|Assistant:)\s*(.*)$",
+            stripped,
             flags=re.IGNORECASE,
         )
         if assistant_match:
-            assistant_line = assistant_match.group(1).strip()
-            if re.match(r"^Captured via .+ ingest workflow\.$", assistant_line, flags=re.IGNORECASE):
-                continue
-            assistant_lines.append(assistant_line)
+            flush_current()
+            current_role = "assistant"
+            first_line = assistant_match.group(1).strip()
+            current_lines = [first_line] if first_line else []
+            continue
 
-    return user_lines, assistant_lines
+        if current_role is not None:
+            current_lines.append(raw.rstrip())
+
+    flush_current()
+
+    user_turns: list[str] = []
+    assistant_turns: list[str] = []
+    for role, raw_lines in turns:
+        rendered = "\n".join(raw_lines).strip()
+        if not rendered:
+            continue
+        if role == "assistant" and re.match(
+            r"^Captured via .+ ingest workflow\.$",
+            rendered,
+            flags=re.IGNORECASE,
+        ):
+            continue
+        if role == "user":
+            user_turns.append(rendered)
+        else:
+            assistant_turns.append(rendered)
+
+    return user_turns, assistant_turns
 
 
 def parse_note_lines(context: str) -> list[str]:
@@ -171,7 +205,7 @@ def build_structured_entry(
     task_ref: str | None,
 ) -> tuple[str, str]:
     """Create deterministic structured daily-log content from context."""
-    user_lines, assistant_lines = parse_dialogue_lines(context)
+    user_lines, assistant_lines = parse_dialogue_turns(context)
     note_lines = parse_note_lines(context)
     candidate_lines = user_lines + assistant_lines
     if not candidate_lines:

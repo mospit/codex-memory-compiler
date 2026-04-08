@@ -23,6 +23,7 @@ Compile conversation history into a markdown knowledge base while preserving the
 ### Works-everywhere fallback (no hooks required)
 ```bash
 uv run python scripts/ingest.py --text "Worked on auth migration and fixed token bug"
+uv run python scripts/ingest.py --codex-chat-file exports/codex-chat.md --session-id codex-chat-001 --compile --lint
 uv run python scripts/compile.py
 uv run python scripts/query.py "What did I decide about auth migration?"
 uv run python scripts/lint.py --structural-only
@@ -55,6 +56,7 @@ uv run python scripts/lint.py --structural-only
 
 ## Scripts and Responsibilities
 - `scripts/ingest.py`: manual ingest entrypoint (Codex-friendly fallback).
+- `scripts/ingest.py`: manual ingest entrypoint, including exported Codex markdown chat capture.
 - `scripts/flush.py`: context-to-daily-log ingestion (used by manual flow or optional integrations).
 - `scripts/compile.py`: corpus-wide deterministic compile from daily logs into canonical concepts + connections.
 - `scripts/query.py`: deterministic index-guided retrieval with shortlist explanation and optional file-back into `knowledge/qa/`.

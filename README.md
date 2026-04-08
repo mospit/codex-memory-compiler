@@ -16,6 +16,7 @@ This project preserves the original memory-compiler architecture:
 - Repositioned hooks as optional compatibility scaffolding under `integrations/claude-hooks/`.
 - Added Codex repository skills in `.agents/skills/` for ingest/compile/query/lint tasks.
 - Added stable session metadata, canonical concept merging, deterministic connection generation, and fixture-based tests.
+- Added a Codex-specific exported-markdown capture path for conversation ingest.
 
 ## Quick start (Codex app first)
 
@@ -38,6 +39,7 @@ Typical loop:
 ```bash
 uv sync
 uv run python scripts/ingest.py --text "Worked on migration plan and codex workflow" --source-type codex-summary
+uv run python scripts/ingest.py --codex-chat-file exports/codex-chat.md --session-id codex-chat-001 --title "Codex Chat Capture" --compile --lint
 uv run python scripts/compile.py
 uv run python scripts/query.py "What changed in the migration?" --explain
 uv run python scripts/lint.py --autofix
@@ -49,6 +51,8 @@ uv run python scripts/lint.py --autofix
 uv run python scripts/ingest.py --text "..."           # manual session ingest
 uv run python scripts/ingest.py --text "..." --title "Auth Migration" --source-type codex-summary
 uv run python scripts/ingest.py --file notes/session.md --session-id codex-manual-001
+uv run python scripts/ingest.py --codex-chat-file exports/codex-chat.md --session-id codex-chat-001
+uv run python scripts/ingest.py --codex-chat-file exports/codex-chat.md --session-id codex-chat-001 --compile --lint
 uv run python scripts/compile.py                        # rebuild KB from the daily-log corpus when changes exist
 uv run python scripts/compile.py --all                  # force recompile all logs
 uv run python scripts/query.py "question"               # ask KB through index-guided shortlisting
@@ -62,6 +66,7 @@ uv run python scripts/lint.py --structural-only         # structural checks only
 ## Data model
 
 - Daily sessions now carry stable `session_id`, `title`, `source_type`, and optional `workspace` / `repo` / `task_ref` metadata.
+- Exported Codex markdown chats can be ingested with `--codex-chat-file` and are stored as `Source Type: codex-chat`.
 - Compiled concept articles carry `concept_id`, `aliases`, `keywords`, `summary`, `source_sessions`, and `source_logs`.
 - Connection articles are generated deterministically when concept co-occurrence reaches the configured threshold.
 
