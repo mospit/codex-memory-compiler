@@ -85,5 +85,6 @@ py -3 -m unittest discover -s tests -v
 ## Docs
 
 - `AGENTS.md` - Codex operating spec for this repository
+- `CODEX_DESKTOP_USAGE.md` - how to use the compiler from Codex desktop and how to try it in another project
 - `MIGRATION_PLAN.md` - migration rationale and phased plan
 - `OPERATING_GUIDE.md` - practical day-to-day usage paths and limitations
