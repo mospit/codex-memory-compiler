@@ -1,0 +1,4 @@
+interface:
+  display_name: "Memory Session Summary"
+  short_description: "Summarize a Codex session and ingest it."
+  default_prompt: "Use $memory-session-summary to capture this Codex session into the memory compiler."

@@ -8,9 +8,10 @@ Confidence: high
 
 Most relevant compiled knowledge:
 
-- [[concepts/authentication-migration]] (concept): Decided to use auth redirect guards for the portal migration and noted the legacy token bug.
-- [[concepts/api-design]] (concept): Portal API design handoff. Avoid disabling the shared API contract and keep auth migration aligned with API design during redirect rollout.
-- [[connections/api-design__authentication-migration]] (connection): API Design and Authentication Migration co-occurred in 2 session(s).
+- [[concepts/authentication-migration]] (concept): daily/2026-04-08.md:22 / `s1` (codex-summary): Keep the shared auth redirect guard during migration.
+- [[decisions/keep-authentication-migration-align-shared-api-contract]] (decision): Keep authentication migration aligned with the shared API contract.
+- [[decisions/keep-shared-authentication-redirect-guard-during-migration]] (decision): Keep the shared auth redirect guard during migration.
+- [[connections/api-design__authentication-migration]] (connection): [[daily/2026-04-08.md]] / `s3`: Reviewed API design changes for the portal auth migration.
 
 ## Synthesis
 
@@ -18,11 +19,25 @@ The shortlist clusters around the cited pages above. Treat those articles as the
 
 ## Sources Consulted
 - [[concepts/authentication-migration]]
-- [[concepts/api-design]]
+- [[decisions/keep-authentication-migration-align-shared-api-contract]]
+- [[decisions/keep-shared-authentication-redirect-guard-during-migration]]
 - [[connections/api-design__authentication-migration]]
+
+## Supporting Excerpts
+
+- [[concepts/authentication-migration]]: daily/2026-04-08.md:22 / `s1` (codex-summary): Keep the shared auth redirect guard during migration.
+- [[concepts/authentication-migration]]: daily/2026-04-08.md:55 / `s2` (codex-summary): Keep the shared auth redirect guard during migration.
+- [[decisions/keep-authentication-migration-align-shared-api-contract]]: daily/2026-04-08.md:83 / `s3` (pr-summary): Keep authentication migration aligned with the shared API contract.
+- [[decisions/keep-authentication-migration-align-shared-api-contract]]: daily/2026-04-08.md:56 / `s2` (codex-summary): Keep authentication migration aligned with the shared API contract.
+- [[decisions/keep-shared-authentication-redirect-guard-during-migration]]: daily/2026-04-08.md:22 / `s1` (codex-summary): Keep the shared auth redirect guard during migration.
+- [[decisions/keep-shared-authentication-redirect-guard-during-migration]]: daily/2026-04-08.md:55 / `s2` (codex-summary): Keep the shared auth redirect guard during migration.
+- [[connections/api-design__authentication-migration]]: [[daily/2026-04-08.md]] / `s3`: Reviewed API design changes for the portal auth migration.
+- [[connections/api-design__authentication-migration]]: [[daily/2026-04-08.md]] / `s4`: Finalized the portal API design handoff for redirect rollout.
 
 ## Retrieval Notes
 
-- [[concepts/authentication-migration]]: total=38, index=18, content=20; keyword hits=2, path hits=2, summary hits=2, content hits=20
-- [[concepts/api-design]]: total=36, index=12, content=24; keyword hits=1, summary hits=4, content hits=24
-- [[connections/api-design__authentication-migration]]: total=28, index=14, content=14; keyword hits=1, path hits=2, summary hits=2, content hits=14
+- Confidence penalties: (none)
+- [[concepts/authentication-migration]]: total=43, index=18, content=25; keyword hits=2, path hits=2, summary hits=2, content hits=25, files_touched hits=1, tests_run hits=1
+- [[decisions/keep-authentication-migration-align-shared-api-contract]]: total=34, index=10, content=24; path hits=2, summary hits=2, content hits=24, files_touched hits=1, tests_run hits=1, canonical decision boost=4
+- [[decisions/keep-shared-authentication-redirect-guard-during-migration]]: total=33, index=10, content=23; path hits=2, summary hits=2, content hits=23, files_touched hits=1, tests_run hits=1, canonical decision boost=4
+- [[connections/api-design__authentication-migration]]: total=28, index=18, content=10; keyword hits=2, path hits=2, summary hits=2, content hits=10

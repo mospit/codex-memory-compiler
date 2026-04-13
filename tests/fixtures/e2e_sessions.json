@@ -7,7 +7,7 @@
     "workspace": "D:/work/prism-portal",
     "repo": "prism/portal",
     "task_ref": "PRISM-101",
-    "text": "Decided to use auth redirect guards for the portal migration and noted the legacy token bug."
+    "text": "## Summary\n- Reviewed the portal auth migration rollout around the shared redirect guard.\n\n## Decisions\n- Keep the shared auth redirect guard during migration.\n\n## Blockers\n- Legacy token fallback cleanup is still pending.\n\n## Files\n- apps/portal/src/auth/redirect.ts\n\n## Validation\n- Verified redirect guard behavior in staging.\n\n## Evidence\n- Confirmed redirect requests resolve through the shared guard path.\n\n## Next Steps\n- Remove the legacy token fallback after the rollout.\n\n## Date Context\n- State captured as of 2026-04-08."
   },
   {
     "now": "2026-04-08T09:25:00-05:00",
@@ -17,7 +17,7 @@
     "workspace": "D:/work/prism-portal",
     "repo": "prism/portal",
     "task_ref": "PRISM-101",
-    "text": "Authentication migration follow up: keep the redirect guard pattern and avoid the legacy token fallback."
+    "text": "## Summary\n- Followed up on authentication migration and the shared API contract.\n\n## Decisions\n- Keep the shared auth redirect guard during migration.\n- Keep authentication migration aligned with the shared API contract.\n\n## Validation\n- Compared migration notes against the current API contract.\n\n## Evidence\n- Confirmed the redirect guard still matches the shared contract.\n\n## Next Steps\n- Prepare the API contract checklist for rollout review.\n\n## Date Context\n- Review completed on 2026-04-08."
   },
   {
     "now": "2026-04-08T09:35:00-05:00",
@@ -27,7 +27,7 @@
     "workspace": "D:/work/prism-portal",
     "repo": "prism/portal",
     "task_ref": "PRISM-202",
-    "text": "API design review for the portal auth migration. Prefer the shared API contract and keep authentication migration aligned with the API design."
+    "text": "## Summary\n- Reviewed API design changes for the portal auth migration.\n\n## Decisions\n- Keep authentication migration aligned with the shared API contract.\n\n## Files\n- apps/portal/src/api/contracts/auth.ts\n\n## Validation\n- Reviewed the shared contract and PR notes side by side.\n\n## Evidence\n- Confirmed the proposed contract still matches the migration assumptions.\n\n## Date Context\n- PR review state captured on 2026-04-08."
   },
   {
     "now": "2026-04-08T09:45:00-05:00",
@@ -37,6 +37,6 @@
     "workspace": "D:/work/prism-portal",
     "repo": "prism/portal",
     "task_ref": "PRISM-203",
-    "text": "Portal API design handoff. Avoid disabling the shared API contract and keep auth migration aligned with API design during redirect rollout."
+    "text": "## Summary\n- Finalized the portal API design handoff for redirect rollout.\n\n## Decisions\n- Keep authentication migration aligned with the shared API contract.\n\n## Validation\n- Walked through the redirect rollout checklist with the handoff notes.\n\n## Evidence\n- Confirmed the rollout notes still reference the shared contract.\n\n## Next Steps\n- Track any contract drift during rollout.\n\n## Date Context\n- Handoff notes captured on 2026-04-08."
   }
 ]
