@@ -6,14 +6,17 @@ import hashlib
 import json
 import re
 from collections import Counter, defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from config import (
     CONCEPTS_DIR,
     CONNECTIONS_DIR,
+    DASHBOARDS_DIR,
     DAILY_DIR,
+    DECISIONS_DIR,
+    GOALS_DIR,
     INDEX_FILE,
     KNOWLEDGE_DIR,
     LOG_FILE,
@@ -145,6 +148,14 @@ NEGATIVE_CUES = {"avoid", "disable", "dont", "do-not", "drop", "never", "remove"
 
 
 @dataclass(slots=True)
+class LineRef:
+    """A text item with its absolute daily-log line number."""
+
+    text: str
+    line_number: int
+
+
+@dataclass(slots=True)
 class DailySession:
     """Normalized daily session entry."""
 
@@ -154,16 +165,29 @@ class DailySession:
     title: str
     source_type: str
     context: str
+    goal: str | None
+    current_status: str | None
     key_exchanges: list[str]
     decisions: list[str]
+    decision_links: list[str]
     lessons: list[str]
     actions: list[str]
+    open_questions: list[str]
+    blockers: list[str]
+    files_touched: list[str]
+    tests_run: list[str]
+    verification_state: str | None
+    evidence_excerpts: list[str]
+    date_context: str | None
     keywords: list[str]
     workspace: str | None
     repo: str | None
     task_ref: str | None
     timestamp_label: str | None
     raw_body: str
+    context_line_number: int | None = None
+    date_context_line_number: int | None = None
+    line_refs: dict[str, list[LineRef]] = field(default_factory=dict)
 
     @property
     def article_source(self) -> str:
@@ -174,10 +198,20 @@ class DailySession:
         parts = [
             self.title,
             self.context,
+            self.goal or "",
+            self.current_status or "",
+            self.date_context or "",
             *self.key_exchanges,
             *self.decisions,
+            *self.decision_links,
             *self.lessons,
             *self.actions,
+            *self.open_questions,
+            *self.blockers,
+            *self.files_touched,
+            *self.tests_run,
+            self.verification_state or "",
+            *self.evidence_excerpts,
             " ".join(self.keywords),
         ]
         return " ".join(part for part in parts if part)
@@ -293,6 +327,18 @@ def trim_sentence(text: str, max_chars: int = 220) -> str:
     return text[: max_chars - 3].rstrip() + "..."
 
 
+def is_weak_summary(text: str) -> bool:
+    """Return whether a summary is too weak for reliable retrieval."""
+    summary = re.sub(r"\s+", " ", text).strip()
+    if len(summary) < 40:
+        return True
+    if summary.lower().startswith("no summary"):
+        return True
+    if summary.endswith("..."):
+        return True
+    return False
+
+
 def extract_keywords(*weighted_texts: tuple[str, int], limit: int = 6) -> list[str]:
     """Extract ordered keywords from weighted text inputs."""
     counter: Counter[str] = Counter()
@@ -336,9 +382,33 @@ def canonical_concept_id(title: str, *supporting_text: str) -> str:
     return fallback or "session-concept"
 
 
+def canonical_decision_id(text: str) -> str:
+    """Derive a stable identifier for an explicit decision line."""
+    normalized = " ".join(tokenize(text, drop_generic=False))
+    return slugify(normalized) or "decision-record"
+
+
 def extract_wikilinks(content: str) -> list[str]:
     """Extract all [[wikilinks]] from markdown content."""
     return re.findall(r"\[\[([^\]]+)\]\]", content)
+
+
+def extract_wikilink_targets(text: str) -> list[str]:
+    """Extract wikilink targets from free-form text."""
+    return re.findall(r"\[\[([^\]|]+)(?:\|[^\]]+)?\]\]", text)
+
+
+def normalize_decision_reference(text: str) -> str | None:
+    """Normalize a wikilink or raw decision reference into a decision id."""
+    for target in extract_wikilink_targets(text):
+        if target.startswith("decisions/"):
+            return target.split("/", 1)[1].strip() or None
+
+    cleaned = text.strip()
+    if cleaned.startswith("decisions/"):
+        return cleaned.split("/", 1)[1].strip() or None
+
+    return None
 
 
 def wiki_article_exists(link: str) -> bool:
@@ -460,7 +530,7 @@ def write_markdown_article(path: Path, frontmatter: dict[str, Any], body: str) -
 def list_wiki_articles() -> list[Path]:
     """List all wiki article files."""
     articles: list[Path] = []
-    for subdir in [CONCEPTS_DIR, CONNECTIONS_DIR, QA_DIR]:
+    for subdir in [DASHBOARDS_DIR, GOALS_DIR, DECISIONS_DIR, CONCEPTS_DIR, CONNECTIONS_DIR, QA_DIR]:
         if subdir.exists():
             articles.extend(sorted(subdir.glob("*.md")))
     return articles
@@ -494,6 +564,9 @@ def get_article_word_count(path: Path) -> int:
 def ensure_knowledge_scaffold() -> None:
     """Create the knowledge directories and base scaffold."""
     KNOWLEDGE_DIR.mkdir(parents=True, exist_ok=True)
+    DASHBOARDS_DIR.mkdir(parents=True, exist_ok=True)
+    GOALS_DIR.mkdir(parents=True, exist_ok=True)
+    DECISIONS_DIR.mkdir(parents=True, exist_ok=True)
     CONCEPTS_DIR.mkdir(parents=True, exist_ok=True)
     CONNECTIONS_DIR.mkdir(parents=True, exist_ok=True)
     QA_DIR.mkdir(parents=True, exist_ok=True)
@@ -510,6 +583,9 @@ def article_type_for_path(path: Path) -> str:
     rel = path.relative_to(KNOWLEDGE_DIR).as_posix()
     prefix = rel.split("/", 1)[0]
     return {
+        "dashboards": "dashboard",
+        "goals": "goal",
+        "decisions": "decision",
         "concepts": "concept",
         "connections": "connection",
         "qa": "qa",
@@ -559,7 +635,7 @@ def rebuild_index() -> None:
 def render_index_lines() -> list[str]:
     """Render the current index into markdown lines without writing it."""
     rows = [INDEX_HEADER.rstrip()]
-    type_order = {"concept": 0, "connection": 1, "qa": 2, "article": 3}
+    type_order = {"dashboard": 0, "goal": 1, "decision": 2, "concept": 3, "connection": 4, "qa": 5, "article": 6}
 
     entries = [build_index_entry(path) for path in list_wiki_articles()]
     entries.sort(key=lambda entry: (type_order.get(entry.article_type, 9), entry.link))
@@ -633,8 +709,19 @@ def read_all_wiki_content() -> str:
     return "\n\n---\n\n".join(parts)
 
 
-def parse_list_section(body: str, heading: str) -> list[str]:
-    """Extract bullet-like section items from a daily session body."""
+def line_number_for_offset(content: str, absolute_index: int) -> int:
+    """Return a 1-based line number for an absolute character offset."""
+    return content.count("\n", 0, absolute_index) + 1
+
+
+def parse_list_section_refs(
+    body: str,
+    heading: str,
+    *,
+    full_content: str,
+    body_start_offset: int,
+) -> list[LineRef]:
+    """Extract bullet-like section items and their absolute line numbers."""
     pattern = re.compile(
         rf"\*\*{re.escape(heading)}:\*\*\s*(.*?)"
         r"(?=\n\*\*[A-Za-z0-9 _-]+:\*\*|\Z)",
@@ -644,24 +731,49 @@ def parse_list_section(body: str, heading: str) -> list[str]:
     if not match:
         return []
 
-    items: list[str] = []
-    for line in match.group(1).splitlines():
+    items: list[LineRef] = []
+    section_text = match.group(1)
+    section_start = body_start_offset + match.start(1)
+    offset = 0
+    for line in section_text.splitlines(keepends=True):
         clean = line.strip()
+        line_number = line_number_for_offset(full_content, section_start + offset)
+        offset += len(line)
         if not clean:
             continue
         clean = re.sub(r"^-\s*(\[[ xX]\]\s*)?", "", clean)
         clean = clean.replace("  Assistant:", "Assistant:")
-        items.append(clean)
+        items.append(LineRef(text=clean, line_number=line_number))
     return items
 
 
-def parse_scalar_section(body: str, heading: str) -> str | None:
-    """Extract a single-line scalar section from a daily session body."""
+def parse_list_section(body: str, heading: str) -> list[str]:
+    """Extract bullet-like section items from a daily session body."""
+    return [item.text for item in parse_list_section_refs(body, heading, full_content=body, body_start_offset=0)]
+
+
+def parse_scalar_section_with_line(
+    body: str,
+    heading: str,
+    *,
+    full_content: str,
+    body_start_offset: int,
+) -> LineRef | None:
+    """Extract a single-line scalar section and its absolute line number."""
     pattern = re.compile(rf"\*\*{re.escape(heading)}:\*\*\s*(.+)$", flags=re.MULTILINE)
     match = pattern.search(body)
     if not match:
         return None
-    return match.group(1).strip()
+    return LineRef(
+        text=match.group(1).strip(),
+        line_number=line_number_for_offset(full_content, body_start_offset + match.start(1)),
+    )
+
+
+def parse_scalar_section(body: str, heading: str) -> str | None:
+    """Extract a single-line scalar section from a daily session body."""
+    item = parse_scalar_section_with_line(body, heading, full_content=body, body_start_offset=0)
+    return item.text if item else None
 
 
 def _fallback_context(body: str) -> str:
@@ -690,16 +802,123 @@ def parse_daily_sessions(log_path: Path) -> list[DailySession]:
         session_id = parse_scalar_section(body, "Session ID")
         source_type = parse_scalar_section(body, "Source Type") or "note"
         title = parse_scalar_section(body, "Title") or raw_title or "Session Note"
-        context = parse_scalar_section(body, "Context") or _fallback_context(body)
-        key_exchanges = parse_list_section(body, "Key Exchanges")
-        decisions = parse_list_section(body, "Decisions Made")
-        lessons = parse_list_section(body, "Lessons Learned")
-        actions = parse_list_section(body, "Action Items")
+
+        body_offset = start
+        context_item = parse_scalar_section_with_line(
+            body,
+            "Context",
+            full_content=log_content,
+            body_start_offset=body_offset,
+        )
+        goal_item = parse_scalar_section_with_line(
+            body,
+            "Goal",
+            full_content=log_content,
+            body_start_offset=body_offset,
+        )
+        current_status_item = parse_scalar_section_with_line(
+            body,
+            "Current Status",
+            full_content=log_content,
+            body_start_offset=body_offset,
+        )
+        context = context_item.text if context_item else _fallback_context(body)
+        key_exchange_refs = parse_list_section_refs(
+            body,
+            "Key Exchanges",
+            full_content=log_content,
+            body_start_offset=body_offset,
+        )
+        decision_refs = parse_list_section_refs(
+            body,
+            "Decisions Made",
+            full_content=log_content,
+            body_start_offset=body_offset,
+        )
+        decision_link_refs = parse_list_section_refs(
+            body,
+            "Decision Links",
+            full_content=log_content,
+            body_start_offset=body_offset,
+        )
+        lesson_refs = parse_list_section_refs(
+            body,
+            "Lessons Learned",
+            full_content=log_content,
+            body_start_offset=body_offset,
+        )
+        action_refs = parse_list_section_refs(
+            body,
+            "Action Items",
+            full_content=log_content,
+            body_start_offset=body_offset,
+        )
+        open_question_refs = parse_list_section_refs(
+            body,
+            "Open Questions",
+            full_content=log_content,
+            body_start_offset=body_offset,
+        )
+        blocker_refs = parse_list_section_refs(
+            body,
+            "Blockers",
+            full_content=log_content,
+            body_start_offset=body_offset,
+        )
+        file_refs = parse_list_section_refs(
+            body,
+            "Files Touched",
+            full_content=log_content,
+            body_start_offset=body_offset,
+        )
+        test_refs = parse_list_section_refs(
+            body,
+            "Tests Run",
+            full_content=log_content,
+            body_start_offset=body_offset,
+        )
+        verification_state_item = parse_scalar_section_with_line(
+            body,
+            "Verification State",
+            full_content=log_content,
+            body_start_offset=body_offset,
+        )
+        evidence_refs = parse_list_section_refs(
+            body,
+            "Evidence Excerpts",
+            full_content=log_content,
+            body_start_offset=body_offset,
+        )
+        date_context_item = parse_scalar_section_with_line(
+            body,
+            "Date Context",
+            full_content=log_content,
+            body_start_offset=body_offset,
+        )
+
+        key_exchanges = [item.text for item in key_exchange_refs]
+        decisions = [item.text for item in decision_refs]
+        decision_links = [item.text for item in decision_link_refs]
+        lessons = [item.text for item in lesson_refs]
+        actions = [item.text for item in action_refs]
+        open_questions = [item.text for item in open_question_refs]
+        blockers = [item.text for item in blocker_refs]
+        files_touched = [item.text for item in file_refs]
+        tests_run = [item.text for item in test_refs]
+        verification_state = verification_state_item.text if verification_state_item else None
+        evidence_excerpts = [item.text for item in evidence_refs]
+        date_context = date_context_item.text if date_context_item else None
+
         keywords_raw = parse_scalar_section(body, "Keywords")
         keywords = (
             [value.strip() for value in keywords_raw.split(",") if value.strip()]
             if keywords_raw
-            else extract_keywords((title, 4), (context, 3), (" ".join(decisions + lessons), 2))
+            else extract_keywords(
+                (title, 4),
+                (context, 3),
+                (date_context or "", 2),
+                (" ".join(decisions + lessons + blockers + tests_run), 2),
+            )
         )
 
         if not session_id:
@@ -714,16 +933,40 @@ def parse_daily_sessions(log_path: Path) -> list[DailySession]:
                 title=title,
                 source_type=source_type,
                 context=context,
+                goal=goal_item.text if goal_item else None,
+                current_status=current_status_item.text if current_status_item else None,
                 key_exchanges=key_exchanges,
                 decisions=decisions,
+                decision_links=decision_links,
                 lessons=lessons,
                 actions=actions,
+                open_questions=open_questions,
+                blockers=blockers,
+                files_touched=files_touched,
+                tests_run=tests_run,
+                verification_state=verification_state,
+                evidence_excerpts=evidence_excerpts,
+                date_context=date_context,
                 keywords=unique_preserve_order(keywords),
                 workspace=parse_scalar_section(body, "Workspace"),
                 repo=parse_scalar_section(body, "Repo"),
                 task_ref=parse_scalar_section(body, "Task Ref"),
                 timestamp_label=match.group(2),
                 raw_body=body,
+                context_line_number=context_item.line_number if context_item else None,
+                date_context_line_number=date_context_item.line_number if date_context_item else None,
+                line_refs={
+                    "key_exchanges": key_exchange_refs,
+                    "decisions": decision_refs,
+                    "decision_links": decision_link_refs,
+                    "lessons": lesson_refs,
+                    "actions": action_refs,
+                    "open_questions": open_question_refs,
+                    "blockers": blocker_refs,
+                    "files_touched": file_refs,
+                    "tests_run": test_refs,
+                    "evidence_excerpts": evidence_refs,
+                },
             )
         )
 

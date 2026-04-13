@@ -30,6 +30,21 @@ logging.basicConfig(
 COMPILE_AFTER_HOUR = 18
 MAX_EXCHANGES = 10
 MAX_NOTE_LINES = 8
+STRUCTURED_HEADING_MAP = {
+    "goal": "goal",
+    "summary": "summary",
+    "current status": "current_status",
+    "decisions": "decisions",
+    "decision links": "decision_links",
+    "blockers": "blockers",
+    "files": "files_touched",
+    "validation": "tests_run",
+    "verification state": "verification_state",
+    "evidence": "evidence_excerpts",
+    "next steps": "actions",
+    "open questions": "open_questions",
+    "date context": "date_context",
+}
 
 
 def load_flush_state() -> dict:
@@ -149,6 +164,34 @@ def parse_note_lines(context: str) -> list[str]:
     return lines
 
 
+def parse_structured_sections(context: str) -> dict[str, list[str] | str] | None:
+    """Parse `## Heading` sections used by structured session summaries."""
+    heading_pattern = re.compile(r"^##\s+(.+?)\s*$", flags=re.MULTILINE)
+    matches = list(heading_pattern.finditer(context))
+    if not matches:
+        return None
+
+    parsed: dict[str, list[str] | str] = {}
+    matched_any = False
+    for index, match in enumerate(matches):
+        heading = match.group(1).strip().lower()
+        key = STRUCTURED_HEADING_MAP.get(heading)
+        if not key:
+            continue
+
+        start = match.end()
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(context)
+        section_body = context[start:end].strip()
+        section_lines = parse_note_lines(section_body)
+        if key in {"goal", "current_status", "verification_state", "date_context"}:
+            parsed[key] = trim_sentence(" ".join(section_lines), 180) if section_lines else ""
+        else:
+            parsed[key] = [trim_sentence(line, 180) for line in section_lines]
+        matched_any = True
+
+    return parsed if matched_any else None
+
+
 def build_key_exchanges(
     user_lines: list[str],
     assistant_lines: list[str],
@@ -205,25 +248,85 @@ def build_structured_entry(
     task_ref: str | None,
 ) -> tuple[str, str]:
     """Create deterministic structured daily-log content from context."""
-    user_lines, assistant_lines = parse_dialogue_turns(context)
-    note_lines = parse_note_lines(context)
-    candidate_lines = user_lines + assistant_lines
-    if not candidate_lines:
-        candidate_lines = note_lines
+    structured_sections = parse_structured_sections(context)
+    if structured_sections:
+        goal = str(structured_sections.get("goal") or "").strip()
+        summary_lines = list(structured_sections.get("summary") or [])
+        current_status = str(structured_sections.get("current_status") or "").strip()
+        decisions = list(structured_sections.get("decisions") or [])
+        decision_links = list(structured_sections.get("decision_links") or [])
+        blockers = list(structured_sections.get("blockers") or [])
+        files_touched = list(structured_sections.get("files_touched") or [])
+        tests_run = list(structured_sections.get("tests_run") or [])
+        verification_state = str(structured_sections.get("verification_state") or "").strip()
+        evidence_excerpts = list(structured_sections.get("evidence_excerpts") or [])
+        actions = list(structured_sections.get("actions") or [])
+        open_questions = list(structured_sections.get("open_questions") or [])
+        date_context = str(structured_sections.get("date_context") or "").strip()
 
-    context_line = (
-        trim_sentence(user_lines[0], 180)
-        if user_lines
-        else trim_sentence(note_lines[0], 180)
-        if note_lines
-        else "No explicit user objective found in captured context."
-    )
-    derived_title = title or derive_title_from_text(context_line)
-    exchanges = build_key_exchanges(user_lines, assistant_lines, note_lines)
-    decisions, lessons, actions = classify_lines(candidate_lines)
+        candidate_lines = [
+            *([goal] if goal else []),
+            *summary_lines,
+            *([current_status] if current_status else []),
+            *decisions,
+            *decision_links,
+            *blockers,
+            *open_questions,
+            *tests_run,
+            *([verification_state] if verification_state else []),
+            *evidence_excerpts,
+            *actions,
+        ]
+        context_line = (
+            trim_sentence(goal, 180)
+            if goal
+            else trim_sentence(summary_lines[0], 180)
+            if summary_lines
+            else trim_sentence(current_status, 180)
+            if current_status
+            else trim_sentence(decisions[0], 180)
+            if decisions
+            else trim_sentence(blockers[0], 180)
+            if blockers
+            else "No explicit user objective found in captured context."
+        )
+        derived_title = title or derive_title_from_text(context_line)
+        exchanges = [trim_sentence(line, 180) for line in summary_lines[:MAX_NOTE_LINES]]
+        lessons: list[str] = []
+    else:
+        user_lines, assistant_lines = parse_dialogue_turns(context)
+        note_lines = parse_note_lines(context)
+        candidate_lines = user_lines + assistant_lines
+        if not candidate_lines:
+            candidate_lines = note_lines
+
+        context_line = (
+            trim_sentence(user_lines[0], 180)
+            if user_lines
+            else trim_sentence(note_lines[0], 180)
+            if note_lines
+            else "No explicit user objective found in captured context."
+        )
+        derived_title = title or derive_title_from_text(context_line)
+        exchanges = build_key_exchanges(user_lines, assistant_lines, note_lines)
+        decisions, lessons, actions = classify_lines(candidate_lines)
+        goal = ""
+        current_status = ""
+        decision_links = []
+        open_questions = []
+        blockers = []
+        files_touched = []
+        tests_run = []
+        verification_state = ""
+        evidence_excerpts = []
+        date_context = ""
+
     keywords = extract_keywords(
         (derived_title, 5),
         (context_line, 4),
+        (goal, 3),
+        (current_status, 3),
+        (date_context, 2),
         (" ".join(candidate_lines), 2),
         limit=6,
     )
@@ -243,6 +346,9 @@ def build_structured_entry(
     parts.extend(
         [
             f"**Context:** {context_line}",
+            *([f"**Goal:** {goal}"] if goal else []),
+            *([f"**Current Status:** {current_status}"] if current_status else []),
+            *([f"**Date Context:** {date_context}"] if date_context else []),
             f"**Keywords:** {', '.join(keywords)}" if keywords else "**Keywords:**",
             "",
             "**Key Exchanges:**",
@@ -252,6 +358,20 @@ def build_structured_entry(
 
     if decisions:
         parts.extend(["", "**Decisions Made:**", *[f"- {line}" for line in decisions]])
+    if decision_links:
+        parts.extend(["", "**Decision Links:**", *[f"- {line}" for line in decision_links]])
+    if blockers:
+        parts.extend(["", "**Blockers:**", *[f"- {line}" for line in blockers]])
+    if open_questions:
+        parts.extend(["", "**Open Questions:**", *[f"- {line}" for line in open_questions]])
+    if files_touched:
+        parts.extend(["", "**Files Touched:**", *[f"- {line}" for line in files_touched]])
+    if tests_run:
+        parts.extend(["", "**Tests Run:**", *[f"- {line}" for line in tests_run]])
+    if verification_state:
+        parts.extend(["", f"**Verification State:** {verification_state}"])
+    if evidence_excerpts:
+        parts.extend(["", "**Evidence Excerpts:**", *[f"- {line}" for line in evidence_excerpts]])
     if lessons:
         parts.extend(["", "**Lessons Learned:**", *[f"- {line}" for line in lessons]])
     if actions:

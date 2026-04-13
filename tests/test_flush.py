@@ -54,3 +54,54 @@ class FlushParserTest(unittest.TestCase):
         self.assertIn(f"**Context:** {expected_context}", structured)
         self.assertIn("- Prefer keeping unittest and adding coverage gates.", structured)
         self.assertIn("- Next: add CI coverage checks after the local suite is stable.", structured)
+
+    def test_build_structured_entry_preserves_structured_summary_sections(self) -> None:
+        context = "\n".join(
+            [
+                "## Summary",
+                "- Implemented structured ingest parsing.",
+                "- Added evidence-backed query output.",
+                "",
+                "## Decisions",
+                "- Keep --text compatible with richer headings.",
+                "",
+                "## Blockers",
+                "- Missing historical evidence in older sessions.",
+                "",
+                "## Files",
+                "- scripts/flush.py",
+                "- scripts/query.py",
+                "",
+                "## Validation",
+                "- py -3 -m unittest tests.test_flush -v",
+                "",
+                "## Evidence",
+                "- daily/2026-04-12.md:60 shows the beta admission model session.",
+                "",
+                "## Next Steps",
+                "- Add first-class decision records.",
+                "",
+                "## Date Context",
+                "- As of 2026-04-12 after fixture repair.",
+            ]
+        )
+
+        structured, derived_title = build_structured_entry(
+            context,
+            session_id="structured-001",
+            title="Structured Summary",
+            source_type="codex-summary",
+            workspace="D:/work/repo",
+            repo="example/repo",
+            task_ref="TASK-1",
+        )
+
+        self.assertEqual(derived_title, "Structured Summary")
+        self.assertIn("**Date Context:** As of 2026-04-12 after fixture repair.", structured)
+        self.assertIn("**Blockers:**", structured)
+        self.assertIn("**Files Touched:**", structured)
+        self.assertIn("**Tests Run:**", structured)
+        self.assertIn("**Evidence Excerpts:**", structured)
+        self.assertIn("**Action Items:**", structured)
+        self.assertIn("- scripts/flush.py", structured)
+        self.assertIn("- py -3 -m unittest tests.test_flush -v", structured)

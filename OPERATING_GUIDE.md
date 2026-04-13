@@ -7,9 +7,17 @@
 3. Run the memory loop:
    - ingest session context
    - compile the corpus into canonical concepts and connections
-   - query knowledge through the index
+   - in Obsidian, review `knowledge/dashboards/open-followups.md` for open work and recent decisions
    - lint and apply safe autofixes when useful
 4. Commit incremental changes to keep memory history reviewable.
+
+## Obsidian view
+
+Use `knowledge/dashboards/open-followups.md` as the main Obsidian review page.
+
+- `## Open Follow-Ups` is the current pending-work view and comes only from explicit action items
+- `## Recent Decisions` is the completed-decisions view and comes from `knowledge/decisions/`
+- if you want “decisions I still need to make,” record them as explicit `## Next Steps` during ingest; the dashboard does not infer undecided questions
 
 ## Works-everywhere fallback path (no hooks)
 
@@ -17,9 +25,9 @@ Use these commands directly:
 
 ```bash
 uv run python scripts/ingest.py --text "Session summary" --source-type codex-summary
-uv run python scripts/ingest.py --codex-chat-file exports/codex-chat.md --session-id codex-chat-001 --compile --lint
+uv run python scripts/ingest.py --codex-chat-file exports/codex-chat.md --session-id codex-chat-001
 uv run python scripts/compile.py
-uv run python scripts/query.py "What did I decide about X?" --explain
+uv run python scripts/query.py "What did I decide about X?" --explain --evidence
 uv run python scripts/lint.py --autofix
 ```
 
@@ -29,10 +37,43 @@ For richer ingest, pass a markdown context file:
 uv run python scripts/ingest.py --file path/to/context.md --session-id my-session-123 --title "Portal Auth Review" --source-type pr-summary
 ```
 
+For high-signal session capture, prefer a structured summary:
+
+```markdown
+## Summary
+- Fixed the compile ranking drift.
+
+## Decisions
+- Emit decision articles only from explicit Decisions items.
+
+## Blockers
+- Golden fixtures still need refresh.
+
+## Files
+- scripts/query.py
+- tests/test_memory_compiler_e2e.py
+
+## Validation
+- py -3 -m unittest tests.test_query tests.test_compile -v
+
+## Evidence
+- Verified excerpts now include `daily/...:line` references.
+
+## Next Steps
+- Refresh the e2e goldens after the new decision pages land.
+
+## Date Context
+- State captured as of 2026-04-12.
+```
+
+You can pass that either as multiline `--text` input or through `--file`. Keep future plans under `## Next Steps`; there is no separate plan article type in this phase.
+
+`scripts/ingest.py` compiles and lints automatically after appending the daily-log entry. Use `--no-compile --no-lint` only when intentionally deferring maintenance.
+
 For exported Codex chat capture, prefer a markdown conversation export:
 
 ```bash
-uv run python scripts/ingest.py --codex-chat-file exports/codex-chat.md --session-id codex-chat-001 --title "Codex Chat Capture" --compile --lint
+uv run python scripts/ingest.py --codex-chat-file exports/codex-chat.md --session-id codex-chat-001 --title "Codex Chat Capture"
 ```
 
 Useful optional metadata:
@@ -40,6 +81,7 @@ Useful optional metadata:
 - `--workspace`
 - `--repo`
 - `--task-ref`
+- `--evidence` on `query.py` to append source-backed excerpts with daily-log line references
 
 ## Limitations / platform notes
 
