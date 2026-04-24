@@ -97,6 +97,12 @@ This works because the memory compiler is currently repo-local, not globally ins
 
 This is useful if you want to try the compiler on another project without copying files yet.
 
+Initialize the memory root first:
+
+```powershell
+uv run python scripts/init.py --workspace-root D:/projects/other-project
+```
+
 From `D:/projects/product/codex-memory-compiler`, set `KB_ROOT_DIR` to a memory folder for the other project:
 
 ```powershell

@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "codex-memory-compiler"
 version = "0.2.0"
@@ -12,6 +16,12 @@ dependencies = [
 dev = [
     "coverage>=7.9.0",
 ]
+
+[project.scripts]
+codex-memory = "codex_memory_compiler.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["codex_memory_compiler*"]
 
 [tool.ruff]
 line-length = 100
