@@ -7,7 +7,7 @@ from collections import defaultdict
 from itertools import combinations
 from pathlib import Path
 
-from config import CONCEPTS_DIR, CONNECTIONS_DIR, INDEX_FILE, KNOWLEDGE_DIR, REPORTS_DIR, now_iso, today_iso
+from config import CONCEPTS_DIR, CONNECTIONS_DIR, DASHBOARDS_DIR, DECISIONS_DIR, GOALS_DIR, INDEX_FILE, KNOWLEDGE_DIR, REPORTS_DIR, now_iso, today_iso
 from utils import (
     build_index_entry,
     canonical_concept_id,
@@ -16,9 +16,11 @@ from utils import (
     file_hash,
     get_article_word_count,
     index_snapshot,
+    is_weak_summary,
     list_raw_files,
     list_wiki_articles,
     load_state,
+    parse_daily_sessions,
     parse_article_sections,
     polarity_subject,
     read_markdown_article,
@@ -54,6 +56,8 @@ def check_broken_links() -> list[dict]:
 def check_orphan_pages() -> list[dict]:
     issues = []
     for article in list_wiki_articles():
+        if article.parent == DASHBOARDS_DIR:
+            continue
         rel = article.relative_to(KNOWLEDGE_DIR).as_posix()
         link_target = rel.replace(".md", "")
         if count_inbound_links(link_target) == 0:
@@ -98,6 +102,8 @@ def check_stale_articles() -> list[dict]:
 def check_missing_backlinks() -> list[dict]:
     issues = []
     for article in list_wiki_articles():
+        if article.parent == DASHBOARDS_DIR:
+            continue
         content = article.read_text(encoding="utf-8")
         rel = article.relative_to(KNOWLEDGE_DIR).as_posix()
         source_link = rel.replace(".md", "")
@@ -149,7 +155,7 @@ def check_weak_summaries() -> list[dict]:
     for article in list_wiki_articles():
         frontmatter, _ = read_markdown_article(article)
         summary = str(frontmatter.get("summary") or "").strip()
-        if len(summary) < 40 or summary.lower().startswith("no summary"):
+        if is_weak_summary(summary):
             issues.append(
                 issue(
                     "suggestion",
@@ -161,11 +167,30 @@ def check_weak_summaries() -> list[dict]:
     return issues
 
 
+def check_thin_codex_summaries() -> list[dict]:
+    issues = []
+    for log_path in list_raw_files():
+        for session in parse_daily_sessions(log_path):
+            if session.source_type != "codex-summary":
+                continue
+            if session.decisions or session.tests_run or session.blockers or session.actions or session.evidence_excerpts:
+                continue
+            issues.append(
+                issue(
+                    "suggestion",
+                    "thin_codex_summary",
+                    f"daily/{log_path.name}",
+                    f"Session `{session.session_id}` has only generic context and no explicit decisions, validation, blockers, evidence, or next steps",
+                )
+            )
+    return issues
+
+
 def check_missing_provenance() -> list[dict]:
     issues = []
     for article in list_wiki_articles():
         frontmatter, _ = read_markdown_article(article)
-        if article.parent not in {CONCEPTS_DIR, CONNECTIONS_DIR}:
+        if article.parent not in {DASHBOARDS_DIR, GOALS_DIR, DECISIONS_DIR, CONCEPTS_DIR, CONNECTIONS_DIR}:
             continue
         if not frontmatter.get("source_sessions") or not frontmatter.get("source_logs"):
             issues.append(
@@ -173,7 +198,7 @@ def check_missing_provenance() -> list[dict]:
                     "warning",
                     "missing_provenance",
                     article.relative_to(KNOWLEDGE_DIR).as_posix(),
-                    "Managed concept/connection article is missing source_sessions or source_logs",
+                    "Managed dashboard/goal/decision/concept/connection article is missing source_sessions or source_logs",
                 )
             )
     return issues
@@ -323,6 +348,7 @@ def run_checks(structural_only: bool) -> list[dict]:
         check_missing_backlinks,
         check_duplicate_concepts,
         check_weak_summaries,
+        check_thin_codex_summaries,
         check_missing_provenance,
         check_stale_index_rows,
         check_empty_connections,

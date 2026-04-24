@@ -27,6 +27,8 @@ class MemoryCompilerE2ETest(KBScriptTestCase):
                 session["repo"],
                 "--task-ref",
                 session["task_ref"],
+                "--no-compile",
+                "--no-lint",
                 "--no-compile-trigger",
                 now=session["now"],
             )
@@ -37,6 +39,18 @@ class MemoryCompilerE2ETest(KBScriptTestCase):
 
         expected_files = [
             ("daily/2026-04-08.md", "e2e/daily/2026-04-08.md"),
+            (
+                "knowledge/dashboards/open-followups.md",
+                "e2e/knowledge/dashboards/open-followups.md",
+            ),
+            (
+                "knowledge/decisions/keep-shared-authentication-redirect-guard-during-migration.md",
+                "e2e/knowledge/decisions/keep-shared-authentication-redirect-guard-during-migration.md",
+            ),
+            (
+                "knowledge/decisions/keep-authentication-migration-align-shared-api-contract.md",
+                "e2e/knowledge/decisions/keep-authentication-migration-align-shared-api-contract.md",
+            ),
             (
                 "knowledge/concepts/authentication-migration.md",
                 "e2e/knowledge/concepts/authentication-migration.md",
@@ -56,6 +70,7 @@ class MemoryCompilerE2ETest(KBScriptTestCase):
             "query.py",
             "What did I decide about auth migration?",
             "--explain",
+            "--evidence",
             now="2026-04-08T10:05:00-05:00",
         )
         self.assertEqual(query_result.returncode, 0, query_result.stderr)
@@ -100,7 +115,7 @@ class MemoryCompilerE2ETest(KBScriptTestCase):
         platform_auth = (self.kb_root / "knowledge" / "concepts" / "platform-auth.md").read_text(encoding="utf-8")
         self.assertIn("[[concepts/api-design]] - Added by lint autofix", platform_auth)
 
-    def test_codex_chat_file_ingest_can_compile_and_lint_in_one_command(self) -> None:
+    def test_codex_chat_file_ingest_compiles_and_lints_automatically(self) -> None:
         transcript = FIXTURES_DIR / "codex_chat_sample.md"
         result = self.run_script(
             "ingest.py",
@@ -116,8 +131,6 @@ class MemoryCompilerE2ETest(KBScriptTestCase):
             "mospit/codex-memory-compiler",
             "--task-ref",
             "dogfood-002",
-            "--compile",
-            "--lint",
             now="2026-04-09T09:00:00-05:00",
         )
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -144,8 +157,8 @@ class MemoryCompilerE2ETest(KBScriptTestCase):
         self.assertIn(f"[[concepts/{concept_stem}]]", query_result.stdout)
 
         lint_report = (self.kb_root / "reports" / "lint-2026-04-09.md").read_text(encoding="utf-8")
-        self.assertIn("Warnings: 1", lint_report)
-        self.assertIn("Orphan page", lint_report)
+        self.assertIn("Warnings: 0", lint_report)
+        self.assertIn("Autofixes applied: 1", lint_report)
 
 
 if __name__ == "__main__":

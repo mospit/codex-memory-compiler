@@ -4,7 +4,7 @@ A markdown-first personal memory system designed for Codex app workflows.
 
 The package keeps the original memory-compiler architecture intact:
 - `daily/` as append-only source logs
-- `knowledge/` as compiled concept, connection, and Q&A articles
+- `knowledge/` as compiled concept, connection, decision, goal, and Q&A articles
 - `knowledge/index.md` as the retrieval catalog
 - `knowledge/log.md` as the append-only compile/query history
 
@@ -12,9 +12,10 @@ The package keeps the original memory-compiler architecture intact:
 
 - The project is Codex-first rather than Claude-dependent.
 - The supported CLI is `codex-memory`, available through `uv run codex-memory`.
-- Repo-local Codex skills live under `.agents/skills/`.
-- Exported Codex markdown chats can be ingested directly.
+- Repo-local Codex skills live under `.agents/skills/`, including session summary, ingest, compile, query, and lint tasks.
+- Exported Codex markdown chats and structured session summaries can be ingested directly.
 - Compile, query, and lint remain deterministic and markdown-native.
+- Optional compatibility hooks live under `integrations/claude-hooks/`.
 
 ## Quick Start
 
@@ -30,8 +31,9 @@ Use `--root .` when running inside this repository so the active memory root is 
 ## Codex App Flow
 
 1. Open this repository in Codex app.
-2. Ask Codex to read `AGENTS.md`.
-3. Use the repo skills:
+2. Ask Codex to follow `AGENTS.md`.
+3. Use repository skills:
+   - `.agents/skills/memory-session-summary`
    - `.agents/skills/memory-ingest`
    - `.agents/skills/memory-compile`
    - `.agents/skills/memory-query`
@@ -39,22 +41,99 @@ Use `--root .` when running inside this repository so the active memory root is 
 
 Typical loop:
 1. Ingest recent work into `daily/`
-2. Compile the corpus into `knowledge/`
-3. Query the knowledge base through the index
-4. Lint for structural issues and safe maintenance fixes
+2. Compile the daily-log corpus into `knowledge/`
+3. Query before planning: use `uv run codex-memory query --root . "<goal or question>" --plan-brief --explain` to pull current status, next steps, open questions, and canonical decisions
+4. In Obsidian, start from `knowledge/dashboards/open-followups.md` for active goals, open work, and recent decisions
+5. Lint for health and apply safe autofixes when needed
+
+## Obsidian Landing Page
+
+The primary Obsidian landing page is `knowledge/dashboards/open-followups.md`.
+
+- `## Open Follow-Ups` shows explicit follow-up actions compiled from session `## Next Steps`
+- `## Recent Decisions` shows recent explicit decision records from `knowledge/decisions/`
+- Pending decisions are not inferred in v1; capture them as explicit follow-up items during ingest
+
+## Structured Session Summaries
+
+When you want better compile and retrieval quality, ingest a structured session summary instead of a single sentence. Supported headings are:
+
+- `## Goal`
+- `## Summary`
+- `## Current Status`
+- `## Decisions`
+- `## Decision Links`
+- `## Blockers`
+- `## Files`
+- `## Validation`
+- `## Verification State`
+- `## Evidence`
+- `## Next Steps`
+- `## Open Questions`
+- `## Date Context`
+
+Use `## Next Steps` for future plans you want retained in memory. Omit sections that do not apply.
+
+Example:
+
+```markdown
+## Goal
+- Start the closed beta launch.
+
+## Summary
+- Tightened the auth migration rollout plan.
+
+## Current Status
+- Two-path launch model is implemented locally.
+
+## Decisions
+- Keep `--text` backward compatible while supporting structured headings.
+
+## Decision Links
+- supersedes: [[decisions/keep-older-note]]
+- implemented_by: apps/portal/lib/beta-access.ts
+- blocked_by: production env setup
+
+## Validation
+- py -3 -m unittest tests.test_query -v
+
+## Verification State
+- Tests pass locally; production verification is still pending.
+
+## Evidence
+- Verified evidence excerpts now include `daily/...:line` references.
+
+## Next Steps
+- Refresh the end-to-end golden fixtures.
+
+## Open Questions
+- Which production verification step is still blocking launch?
+```
 
 ## CLI Commands
 
 ```bash
 uv run codex-memory init --workspace-root D:/projects/other-project
 uv run codex-memory ingest --root . --text "Worked on memory compiler docs." --source-type codex-summary
-uv run codex-memory ingest --root . --file notes/session.md --session-id codex-manual-001 --title "Portal Auth Review" --source-type pr-summary
-uv run codex-memory ingest --root . --codex-chat-file exports/codex-chat.md --session-id codex-chat-001 --title "Codex Chat Capture" --compile --lint
+uv run codex-memory ingest --root . --goal "Start the closed beta" --current-status "Two-path model is implemented locally" --decision "Keep founder invites manual copy-link only" --file-touched apps/portal/lib/beta-access.ts --validation "npm --prefix apps/portal run test:policy" --next-step "Set production env and rerun launch checks"
+uv run codex-memory ingest --root . --file notes/session.md --session-id codex-manual-001 --title "Portal Auth Review" --source-type codex-summary
+uv run codex-memory ingest --root . --codex-chat-file exports/codex-chat.md --session-id codex-chat-001 --title "Codex Chat Capture"
 uv run codex-memory compile --root .
+uv run codex-memory compile --root . --all
 uv run codex-memory query --root . "What did I decide about the workflow?" --explain
+uv run codex-memory query --root . "What changed this week?" --explain --evidence
+uv run codex-memory query --root . "What are the next steps to proceed?" --plan-brief --explain
 uv run codex-memory query --root . "What changed this week?" --file-back
 uv run codex-memory lint --root . --structural-only
 uv run codex-memory lint --root . --autofix
+```
+
+Legacy script entrypoints remain available as compatibility shims:
+
+```bash
+uv run python scripts/ingest.py --text "Worked on migration plan and codex workflow" --source-type codex-summary
+uv run python scripts/query.py "What changed in the migration?" --explain --evidence
+uv run python scripts/lint.py --autofix
 ```
 
 ## Mini Guides
@@ -69,7 +148,7 @@ uv run codex-memory compile --root .
 ### Ingest an exported Codex chat
 
 ```bash
-uv run codex-memory ingest --root . --codex-chat-file exports/codex-chat.md --session-id codex-chat-001 --title "Codex Chat Capture" --compile --lint
+uv run codex-memory ingest --root . --codex-chat-file exports/codex-chat.md --session-id codex-chat-001 --title "Codex Chat Capture"
 ```
 
 ### Ask the compiled knowledge base a question
@@ -94,7 +173,7 @@ The CLI resolves the memory root in this order:
 1. `--root PATH`
 2. `--workspace-root PATH` which maps to `<workspace>/.codex-memory`
 3. `KB_ROOT_DIR`
-4. the current working directory's `.codex-memory`
+4. The current working directory's `.codex-memory`
 
 Practical guidance:
 - Use `--root .` when you want this repository itself to be the memory root.
@@ -103,9 +182,12 @@ Practical guidance:
 
 ## Data Model
 
-- Daily sessions carry `session_id`, `title`, `source_type`, and optional `workspace` / `repo` / `task_ref`.
-- Supported ingest source types include `note`, `codex-summary`, `commit-summary`, `pr-summary`, and `codex-chat`.
+- Daily sessions carry stable `session_id`, `title`, `source_type`, and optional `workspace` / `repo` / `task_ref` metadata.
+- Structured session summaries can also capture `goal`, `current_status`, `decision_links`, `blockers`, `files_touched`, `tests_run`, `verification_state`, `evidence_excerpts`, `open_questions`, and `date_context`.
+- Exported Codex markdown chats can be ingested with `--codex-chat-file` and are stored as `Source Type: codex-chat`.
+- Goal records compile into `knowledge/goals/` when sessions include explicit goal/status/question data.
 - Compiled concept articles carry `concept_id`, `aliases`, `keywords`, `summary`, `source_sessions`, and `source_logs`.
+- Compiled decision articles in `knowledge/decisions/` are emitted only from explicit `## Decisions` items in structured summaries and can track `supersedes`, `implemented_by`, `blocked_by`, and `superseded_by`.
 - Connection articles are generated deterministically when concept co-occurrence reaches the configured threshold.
 
 ## Tests

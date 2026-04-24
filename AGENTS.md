@@ -15,15 +15,17 @@ Compile conversation history into a markdown knowledge base while preserving the
 1. Open the repo in Codex app.
 2. Ask Codex to use the repository skills in `.agents/skills/`:
    - `memory-ingest`
+   - `memory-session-summary`
    - `memory-compile`
    - `memory-query`
    - `memory-lint`
-3. Keep changes small and commit after each logical phase.
+3. Before proposing a plan, next steps, or current-status summary, run `memory-query` first and prefer `uv run python scripts/query.py "<question>" --plan-brief --explain`.
+4. Keep changes small and commit after each logical phase.
 
 ### Works-everywhere fallback (no hooks required)
 ```bash
 uv run python scripts/ingest.py --text "Worked on auth migration and fixed token bug"
-uv run python scripts/ingest.py --codex-chat-file exports/codex-chat.md --session-id codex-chat-001 --compile --lint
+uv run python scripts/ingest.py --codex-chat-file exports/codex-chat.md --session-id codex-chat-001
 uv run python scripts/compile.py
 uv run python scripts/query.py "What did I decide about auth migration?"
 uv run python scripts/lint.py --structural-only
@@ -55,8 +57,7 @@ uv run python scripts/lint.py --structural-only
 - Prefer `[[wikilinks]]` in answers and article cross-references.
 
 ## Scripts and Responsibilities
-- `scripts/ingest.py`: manual ingest entrypoint (Codex-friendly fallback).
-- `scripts/ingest.py`: manual ingest entrypoint, including exported Codex markdown chat capture.
+- `scripts/ingest.py`: manual ingest entrypoint (Codex-friendly fallback) that appends to daily logs, compiles and lints by default, and supports exported Codex markdown chat capture.
 - `scripts/flush.py`: context-to-daily-log ingestion (used by manual flow or optional integrations).
 - `scripts/compile.py`: corpus-wide deterministic compile from daily logs into canonical concepts + connections.
 - `scripts/query.py`: deterministic index-guided retrieval with shortlist explanation and optional file-back into `knowledge/qa/`.

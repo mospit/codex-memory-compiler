@@ -28,10 +28,16 @@ Save a short session summary:
 Read AGENTS.md. Use memory-ingest to save this session: I tested codex-memory-compiler on itself and verified ingest, compile, query, and lint.
 ```
 
+Save a structured session summary:
+
+```text
+Read AGENTS.md. Use memory-session-summary and memory-ingest to save this session with sections for Summary, Decisions, Validation, Evidence, and Next Steps.
+```
+
 Compile and query:
 
 ```text
-Use memory-compile, then use memory-query to answer: What did I decide about the memory compiler workflow?
+Use memory-compile, then use memory-query to answer: What did I decide about the memory compiler workflow? Include supporting evidence excerpts.
 ```
 
 Maintenance:
@@ -47,7 +53,7 @@ This repo does not currently include a supported Codex-native session-end hook. 
 For transcript-style capture:
 
 ```powershell
-uv run python scripts/ingest.py --codex-chat-file exports/codex-chat.md --session-id codex-chat-001 --title "Codex Chat Capture" --compile --lint
+uv run python scripts/ingest.py --codex-chat-file exports/codex-chat.md --session-id codex-chat-001 --title "Codex Chat Capture"
 ```
 
 ## Is it installed on this machine?
@@ -97,7 +103,7 @@ From `D:/projects/product/codex-memory-compiler`, set `KB_ROOT_DIR` to a memory 
 $env:KB_ROOT_DIR = "D:/projects/other-project/.codex-memory"
 uv run python scripts/ingest.py --text "Worked on auth migration." --title "Auth Migration" --source-type codex-summary --workspace "D:/projects/other-project" --repo "owner/other-project"
 uv run python scripts/compile.py
-uv run python scripts/query.py "What did I do in the other project?" --explain
+uv run python scripts/query.py "What did I do in the other project?" --explain --evidence
 ```
 
 This keeps the compiler code in this repo, but stores the memory database under the other project's `.codex-memory/` folder.
