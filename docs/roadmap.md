@@ -28,7 +28,7 @@ planning.
 
 Planned adapters should be explicit imports, not hidden background capture:
 
-- `codex-memory ingest-git --since HEAD~10`
+- `codex-memory ingest-git --since HEAD~10` for commit messages and touched files
 - `codex-memory ingest-pr --file pr.md`
 - `codex-memory ingest-issue --file issue.md`
 - `codex-memory ingest-codex-memory --path ~/.codex/memories --read-only`

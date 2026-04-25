@@ -71,11 +71,16 @@ Typical loop:
 
 ### Automation Path
 
-Automation is a roadmap item, not a supported promise today. The intended shape
-is to ingest structured sources such as git commits, PR descriptions, issue
-comments, exported Codex chats, and read-only Codex memory files through explicit
-adapters. Until those adapters exist, use `codex-memory ingest` with structured
-session summaries or exported markdown transcripts.
+The first source adapter is git commit ingest:
+
+```bash
+uv run codex-memory ingest-git --since HEAD~10
+```
+
+That imports commits in `HEAD~10..HEAD` as a `commit-summary` session with
+touched files and source evidence. Other adapters, including PR descriptions,
+issue comments, exported transcripts, and read-only Codex memory imports, remain
+roadmap items.
 
 ## Obsidian Landing Page
 
@@ -149,6 +154,7 @@ uv run codex-memory ingest --root . --text "Worked on memory compiler docs." --s
 uv run codex-memory ingest --root . --goal "Start the closed beta" --current-status "Two-path model is implemented locally" --decision "Keep founder invites manual copy-link only" --file-touched apps/portal/lib/beta-access.ts --validation "npm --prefix apps/portal run test:policy" --next-step "Set production env and rerun launch checks"
 uv run codex-memory ingest --root . --file notes/session.md --session-id codex-manual-001 --title "Portal Auth Review" --source-type codex-summary
 uv run codex-memory ingest --root . --codex-chat-file exports/codex-chat.md --session-id codex-chat-001 --title "Codex Chat Capture"
+uv run codex-memory ingest-git --root . --since HEAD~10
 uv run codex-memory compile --root .
 uv run codex-memory compile --root . --all
 uv run codex-memory query --root . "What did I decide about the workflow?" --explain
