@@ -41,10 +41,18 @@ root flags over ambient `KB_ROOT_DIR` when switching between projects.
 
 ## Automation Path
 
-Automation is planned as explicit source adapters, not hidden background capture.
-The high-value adapters are:
+Automation is implemented as explicit source adapters, not hidden background
+capture. The first adapter imports git commits:
 
-- `ingest-git --since HEAD~10` for commit messages and touched files
+```bash
+uv run codex-memory ingest-git --since HEAD~10
+```
+
+`--since HEAD~10` imports `HEAD~10..HEAD` as a structured `commit-summary`
+session with commit subjects, touched files, and source evidence.
+
+Remaining high-value adapters are planned:
+
 - `ingest-pr --file pr.md` or GitHub CLI integration for PR summaries
 - `ingest-issue --file issue.md` for issue context
 - `ingest-codex-memory --path ~/.codex/memories --read-only` for importing context without editing Codex-owned state

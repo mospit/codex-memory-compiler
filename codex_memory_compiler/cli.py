@@ -13,7 +13,7 @@ from .targeting import (
     resolve_target_selection,
 )
 
-COMMANDS = {"init", "ingest", "compile", "query", "lint"}
+COMMANDS = {"init", "ingest", "ingest-git", "compile", "query", "lint"}
 
 
 def render_help() -> str:
@@ -23,6 +23,7 @@ def render_help() -> str:
         "commands:",
         "  init      create or verify a .codex-memory root",
         "  ingest    save session context into daily logs",
+        "  ingest-git  import recent git commits into daily logs",
         "  compile   rebuild knowledge from daily logs",
         "  query     ask the compiled knowledge base",
         "  lint      run knowledge base health checks",
@@ -35,7 +36,7 @@ def render_help() -> str:
 
 
 def is_write_command(command: str, argv: list[str]) -> bool:
-    if command in {"init", "ingest", "compile", "lint"}:
+    if command in {"init", "ingest", "ingest-git", "compile", "lint"}:
         return True
     if command == "query":
         return query_is_write_mode(argv)
@@ -68,7 +69,7 @@ def dispatch(command: str, argv: list[str], *, legacy_default_root: bool) -> int
                 "Run `codex-memory init` or use a write command like `codex-memory ingest ...` first."
             )
 
-    module = importlib.import_module(f".{command}", package=__package__)
+    module = importlib.import_module(f".{command.replace('-', '_')}", package=__package__)
     return int(module.main(remaining_args) or 0)
 
 
