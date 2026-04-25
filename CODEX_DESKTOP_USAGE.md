@@ -1,14 +1,17 @@
 # Codex Desktop Usage Guide
 
-This project is designed to be used from the Codex desktop app as a repo-local workflow.
+This project is designed to be used from the Codex desktop app as a repo-local,
+auditable memory compiler. It complements Codex native memories by producing
+markdown artifacts for decisions, goals, follow-ups, evidence, and status that
+can be reviewed with the project.
 
-## Recommended flow in this repo
+## Recommended Flow In This Repo
 
 1. Open `D:/projects/product/codex-memory-compiler` in Codex desktop.
 2. Start by telling Codex:
 
 ```text
-Read AGENTS.md and use the repository skills memory-ingest, memory-compile, memory-query, and memory-lint for this repo.
+Read AGENTS.md and use the repository skills memory-session-summary, memory-ingest, memory-compile, memory-query, and memory-lint for this repo.
 ```
 
 3. Use the normal loop:
@@ -20,7 +23,7 @@ Use memory-query to answer: How am I using the codex memory compiler in this rep
 Use memory-lint and summarize any issues.
 ```
 
-## Good prompt examples
+## Good Prompt Examples
 
 Save a short session summary:
 
@@ -46,41 +49,52 @@ Maintenance:
 Use memory-lint and apply safe autofixes if needed.
 ```
 
-## Important limitation
+## Important Limitation
 
-This repo does not currently include a supported Codex-native session-end hook. In Codex desktop, memory capture is manual unless you export a chat to markdown and ingest that file explicitly.
+This repo does not currently include a supported Codex-native session-end hook.
+In Codex desktop, memory capture is manual unless you export a chat to markdown
+and ingest that file explicitly.
+
+That limitation is intentional in the current product shape: capture should be
+explicit and reviewable until source adapters exist for git commits, PRs, issues,
+transcripts, or read-only Codex memory imports.
 
 For transcript-style capture:
 
 ```powershell
-uv run python scripts/ingest.py --codex-chat-file exports/codex-chat.md --session-id codex-chat-001 --title "Codex Chat Capture"
+uv run codex-memory ingest --root . --codex-chat-file exports/codex-chat.md --session-id codex-chat-001 --title "Codex Chat Capture"
 ```
 
-## Is it installed on this machine?
+## Is It Installed On This Machine?
 
 Not as a machine-wide tool.
 
 What exists on this machine right now is:
 
 - this repository
+- its Python package and CLI entry point
 - its Python scripts under `scripts/`
 - its repo-local Codex skills under `.agents/skills/`
 
-There is no globally installed `codex-memory-compiler` command. `Get-Command codex-memory-compiler` does not resolve to an executable on this machine.
+There is no globally installed `codex-memory-compiler` command. Use
+`uv run codex-memory` from this checkout or from a project that has installed
+the package.
 
-## Trying it on another project
+## Trying It On Another Project
 
 There are two workable paths.
 
-### Option A: Copy the memory compiler into the target project
+### Option A: Copy The Memory Compiler Into The Target Project
 
-This is the best fit if you want the same Codex desktop experience inside another repo.
+This is the best fit if you want the same Codex desktop experience inside
+another repo.
 
 Bring these files into the target project:
 
 - `AGENTS.md`
 - `.agents/skills/`
 - `scripts/`
+- `codex_memory_compiler/`
 - `pyproject.toml`
 
 Then in the target project:
@@ -91,33 +105,43 @@ uv sync
 
 Open that target project in Codex desktop and use the same prompts as above.
 
-This works because the memory compiler is currently repo-local, not globally installed.
+This works because the memory compiler is currently repo-local, not globally
+installed.
 
-### Option B: Reuse this checkout and point it at another project
+### Option B: Reuse This Checkout And Point It At Another Project
 
-This is useful if you want to try the compiler on another project without copying files yet.
+This is useful if you want to try the compiler on another project without
+copying files yet.
 
 Initialize the memory root first:
 
 ```powershell
-uv run python scripts/init.py --workspace-root D:/projects/other-project
+uv run codex-memory init --workspace-root D:/projects/other-project
 ```
 
-From `D:/projects/product/codex-memory-compiler`, set `KB_ROOT_DIR` to a memory folder for the other project:
+From `D:/projects/product/codex-memory-compiler`, set `KB_ROOT_DIR` to a memory
+folder for the other project:
 
 ```powershell
 $env:KB_ROOT_DIR = "D:/projects/other-project/.codex-memory"
-uv run python scripts/ingest.py --text "Worked on auth migration." --title "Auth Migration" --source-type codex-summary --workspace "D:/projects/other-project" --repo "owner/other-project"
-uv run python scripts/compile.py
-uv run python scripts/query.py "What did I do in the other project?" --explain --evidence
+uv run codex-memory ingest --text "Worked on auth migration." --title "Auth Migration" --source-type codex-summary --workspace "D:/projects/other-project" --repo "owner/other-project"
+uv run codex-memory compile
+uv run codex-memory query "What did I do in the other project?" --explain --evidence
 ```
 
-This keeps the compiler code in this repo, but stores the memory database under the other project's `.codex-memory/` folder.
+This keeps the compiler code in this repo, but stores the memory database under
+the other project's `.codex-memory/` folder.
 
-Important: Option B is a CLI/manual workflow. Codex desktop in the other project will not automatically have this repo's skills unless you copy them into that project or install an equivalent global skill setup.
+Important: Option B is a CLI/manual workflow. Codex desktop in the other project
+will not automatically have this repo's skills unless you copy them into that
+project or install an equivalent global skill setup.
 
 ## Recommendation
 
 If you want to dogfood quickly, use Option B first.
 
-If you want Codex desktop to feel native inside another repo, use Option A and keep the memory compiler files in that repo.
+If you want Codex desktop to feel native inside another repo, use Option A and
+keep the memory compiler files in that repo.
+
+Before committing or sharing generated memory artifacts, read
+`docs/threat-model.md`.

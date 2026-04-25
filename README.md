@@ -1,34 +1,57 @@
 # Codex Memory Compiler
 
-A markdown-first personal memory system designed for Codex app workflows.
+Codex Memory Compiler is a repo-scoped, markdown-first memory compiler for
+decisions, goals, follow-ups, and project evidence. It complements Codex native
+memories by producing reviewable, versioned knowledge artifacts inside your repo
+or `.codex-memory/`.
 
-The package keeps the original memory-compiler architecture intact:
+It is not a replacement for native Codex memories. Treat Codex memories as a
+helpful local recall layer, and use this project when the memory needs to be
+auditable, inspectable in git, queryable before planning, and easy to review in
+Obsidian.
+
+The compiler keeps the original memory-compiler architecture intact:
 - `daily/` as append-only source logs
 - `knowledge/` as compiled concept, connection, decision, goal, and Q&A articles
 - `knowledge/index.md` as the retrieval catalog
 - `knowledge/log.md` as the append-only compile/query history
 
-## What Changed
+## Product Role
 
-- The project is Codex-first rather than Claude-dependent.
-- The supported CLI is `codex-memory`, available through `uv run codex-memory`.
+- Repo-scoped memory: knowledge lives with the project it describes.
+- Markdown-first artifacts: outputs are inspectable, diffable, and Obsidian-friendly.
+- Explicit decisions: decision pages come only from explicit `## Decisions` items.
+- Query-before-planning: agents should retrieve current status, next steps, open questions, and canonical decisions before proposing work.
+- Provider-light workflow: the supported CLI is `codex-memory`, available through `uv run codex-memory`.
 - Repo-local Codex skills live under `.agents/skills/`, including session summary, ingest, compile, query, and lint tasks.
 - Exported Codex markdown chats and structured session summaries can be ingested directly.
 - Compile, query, and lint remain deterministic and markdown-native.
 - Optional compatibility hooks live under `integrations/claude-hooks/`.
 
-## Quick Start
+## Usage Paths
+
+### Solo Dogfood Path
+
+Use this when you want to run the compiler yourself from a terminal.
 
 ```bash
 uv sync
 uv run codex-memory --help
+uv run codex-memory init --workspace-root D:/projects/other-project
+uv run codex-memory ingest --workspace-root D:/projects/other-project --text "Worked on auth migration and fixed token bug" --source-type codex-summary
+uv run codex-memory query --workspace-root D:/projects/other-project "What did I decide about auth migration?" --plan-brief --explain
+uv run codex-memory lint --workspace-root D:/projects/other-project --structural-only
+```
+
+Use `--root .` when running inside this repository so the active memory root is
+explicit even if your shell has `KB_ROOT_DIR` set elsewhere:
+
+```bash
 uv run codex-memory compile --root .
 uv run codex-memory query --root . "What does this memory compiler know already?" --explain
 ```
 
-Use `--root .` when running inside this repository so the active memory root is explicit even if your shell has `KB_ROOT_DIR` set elsewhere.
-
-## Codex App Flow
+### Codex App Path
 
 1. Open this repository in Codex app.
 2. Ask Codex to follow `AGENTS.md`.
@@ -45,6 +68,14 @@ Typical loop:
 3. Query before planning: use `uv run codex-memory query --root . "<goal or question>" --plan-brief --explain` to pull current status, next steps, open questions, and canonical decisions
 4. In Obsidian, start from `knowledge/dashboards/open-followups.md` for active goals, open work, and recent decisions
 5. Lint for health and apply safe autofixes when needed
+
+### Automation Path
+
+Automation is a roadmap item, not a supported promise today. The intended shape
+is to ingest structured sources such as git commits, PR descriptions, issue
+comments, exported Codex chats, and read-only Codex memory files through explicit
+adapters. Until those adapters exist, use `codex-memory ingest` with structured
+session summaries or exported markdown transcripts.
 
 ## Obsidian Landing Page
 
@@ -201,10 +232,14 @@ py -3 -m unittest discover -s tests -v
 - `integrations/claude-hooks/` contains compatibility-only Claude lifecycle hook scripts.
 - These are not required for Codex app usage.
 - The supported fallback path is the `codex-memory` CLI.
+- Automatic Codex session-end capture is not supported by this repository today.
+- See `docs/roadmap.md` for planned source adapters and `docs/threat-model.md` for storage and sharing guidance.
 
 ## Docs
 
 - `AGENTS.md` - operating spec for this repository
 - `CODEX_DESKTOP_USAGE.md` - Codex desktop workflow notes
 - `OPERATING_GUIDE.md` - practical usage paths and limitations
+- `docs/roadmap.md` - product priorities and future work
+- `docs/threat-model.md` - privacy, retention, redaction, and git safety notes
 - `MIGRATION_PLAN.md` - migration rationale and phased plan
