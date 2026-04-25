@@ -1,4 +1,4 @@
-"""Compatibility shim for query command and helpers."""
+"""Compatibility shim for init command."""
 
 from __future__ import annotations
 
@@ -13,6 +13,6 @@ if str(REPO_ROOT) not in sys.path:
 if __name__ == "__main__":
     from codex_memory_compiler.cli import main as _cli_main
 
-    raise SystemExit(_cli_main(["query", *sys.argv[1:]], legacy_default_root=True))
+    raise SystemExit(_cli_main(["init", *sys.argv[1:]], legacy_default_root=True))
 
-sys.modules[__name__] = importlib.import_module("codex_memory_compiler.query")
+sys.modules[__name__] = importlib.import_module("codex_memory_compiler.init")

@@ -48,6 +48,30 @@ class KBScriptTestCase(unittest.TestCase):
             check=False,
         )
 
+    def run_package_cli(
+        self,
+        *args: str,
+        now: str,
+        cwd: Path | None = None,
+        extra_env: dict[str, str] | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        env = os.environ.copy()
+        env["KB_NOW"] = now
+        if extra_env:
+            env.update(extra_env)
+        pythonpath = env.get("PYTHONPATH")
+        env["PYTHONPATH"] = (
+            f"{REPO_ROOT}{os.pathsep}{pythonpath}" if pythonpath else str(REPO_ROOT)
+        )
+        return subprocess.run(
+            [sys.executable, "-m", "codex_memory_compiler", *args],
+            cwd=cwd or REPO_ROOT,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
     def assert_matches_golden(self, actual_path: Path, golden_path: Path) -> None:
         actual = normalize_text(actual_path.read_text(encoding="utf-8"))
         expected = normalize_text(golden_path.read_text(encoding="utf-8"))
