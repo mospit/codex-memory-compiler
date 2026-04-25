@@ -1,13 +1,23 @@
 # AGENTS.md - Codex Memory Compiler Operating Spec
 
-This repository is a **Codex-first personal memory compiler**.
+This repository is a **repo-scoped, markdown-first memory compiler** for
+decisions, goals, follow-ups, and project evidence.
+
+It complements Codex native memories. Native memories are useful local recall;
+this repository owns the reviewable, versioned, inspectable knowledge artifacts
+that can be committed, queried, linted, and reviewed with the project.
 
 ## Purpose
-Compile conversation history into a markdown knowledge base while preserving the original architecture:
+Compile project work into a markdown knowledge base while preserving the
+original architecture:
 - `daily/` = immutable source logs
 - `knowledge/` = compiled articles
 - `knowledge/index.md` = primary retrieval catalog
 - `knowledge/log.md` = append-only build/query history
+
+The compiler should be honest about capture limits. Codex-native session-end
+hooks are not currently supported here; use manual ingest, exported transcripts,
+or future explicit source adapters.
 
 ## Codex-First Workflow
 
@@ -24,11 +34,11 @@ Compile conversation history into a markdown knowledge base while preserving the
 
 ### Works-everywhere fallback (no hooks required)
 ```bash
-uv run python scripts/ingest.py --text "Worked on auth migration and fixed token bug"
-uv run python scripts/ingest.py --codex-chat-file exports/codex-chat.md --session-id codex-chat-001
-uv run python scripts/compile.py
-uv run python scripts/query.py "What did I decide about auth migration?"
-uv run python scripts/lint.py --structural-only
+uv run codex-memory ingest --root . --text "Worked on auth migration and fixed token bug"
+uv run codex-memory ingest --root . --codex-chat-file exports/codex-chat.md --session-id codex-chat-001
+uv run codex-memory compile --root .
+uv run codex-memory query --root . "What did I decide about auth migration?"
+uv run codex-memory lint --root . --structural-only
 ```
 
 ## Architecture Contracts
@@ -70,12 +80,20 @@ Claude-specific hook examples are isolated under:
 
 These are **optional compatibility scaffolding**, not core requirements.
 
+Future adapters should be explicit, reviewable source imports rather than hidden
+capture paths. Planned sources include git commits, PR descriptions, issue
+comments, exported Codex chats, transcript files, and read-only Codex memory
+imports.
+
 ## Editing Guidelines
 - Preserve markdown knowledge model and directory contracts.
 - Prefer deterministic file operations and explicit index/log updates.
 - Keep concept identity stable through `concept_id` rather than raw session headings.
 - Avoid hidden magic; prioritize maintainability for a solo developer.
 - Keep diffs focused and easy to review.
+- Do not present this project as a replacement for Codex native memories.
+- Put durable product direction in checked-in docs such as `docs/roadmap.md`.
+- Put privacy, retention, redaction, and sharing guidance in `docs/threat-model.md`.
 
 ## Definition of Done for Changes
 - Value is available without provider-specific hooks or SDKs.
